@@ -16,7 +16,7 @@ public class MyCustomApplication extends Application {
     protected void attachBaseContext(Context base) {
         super.attachBaseContext(base);
 
-//        System.loadLibrary("sample"); // test load-before-init
+        System.loadLibrary("sample"); // test load-before-init
 
         long start, end;
 

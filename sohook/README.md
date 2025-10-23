@@ -1,0 +1,195 @@
+# SoHook - 基于ByteHook的内存泄漏检测库
+
+## 简介
+
+SoHook是一个基于ByteHook的Android内存泄漏检测库，可以监控指定so库的内存分配和释放，帮助开发者发现内存泄漏问题。
+
+## 功能特性
+
+- ✅ 监控指定so库的内存分配（malloc/calloc/realloc）
+- ✅ 监控指定so库的内存释放（free）
+- ✅ 实时统计内存分配和释放情况
+- ✅ 生成内存泄漏报告
+- ✅ 支持导出报告到文件
+- ✅ 支持调试模式
+
+## 快速开始
+
+### 1. 初始化
+
+在应用启动时初始化SoHook：
+
+```java
+import com.sohook.SoHook;
+
+// 初始化，开启调试模式
+int ret = SoHook.init(true);
+if (ret == 0) {
+    Log.i(TAG, "SoHook初始化成功");
+} else {
+    Log.e(TAG, "SoHook初始化失败: " + ret);
+}
+```
+
+### 2. 开始监控
+
+指定需要监控的so库：
+
+```java
+import java.util.Arrays;
+import java.util.List;
+
+// 监控指定的so库
+List<String> soNames = Arrays.asList(
+    "libnative-lib.so",
+    "libtest.so"
+);
+
+int ret = SoHook.hook(soNames);
+if (ret == 0) {
+    Log.i(TAG, "开始监控内存");
+}
+```
+
+### 3. 获取内存统计
+
+实时获取内存分配统计信息：
+
+```java
+SoHook.MemoryStats stats = SoHook.getMemoryStats();
+Log.i(TAG, "内存统计: " + stats.toString());
+// 输出示例：
+// MemoryStats{
+//   totalAllocCount=1000,
+//   totalAllocSize=102400,
+//   totalFreeCount=950,
+//   totalFreeSize=97280,
+//   currentAllocCount=50,
+//   currentAllocSize=5120
+// }
+```
+
+### 4. 生成泄漏报告
+
+获取内存泄漏报告：
+
+```java
+// 获取报告字符串
+String report = SoHook.getLeakReport();
+Log.i(TAG, report);
+
+// 或导出到文件
+String filePath = "/sdcard/leak_report.txt";
+int ret = SoHook.dumpLeakReport(filePath);
+if (ret == 0) {
+    Log.i(TAG, "报告已导出到: " + filePath);
+}
+```
+
+### 5. 停止监控
+
+停止对指定so库的监控：
+
+```java
+int ret = SoHook.unhook(soNames);
+if (ret == 0) {
+    Log.i(TAG, "停止监控");
+}
+```
+
+### 6. 重置统计
+
+重置所有统计信息：
+
+```java
+SoHook.resetStats();
+```
+
+## API文档
+
+### SoHook类
+
+#### 静态方法
+
+| 方法 | 说明 | 参数 | 返回值 |
+|------|------|------|--------|
+| `init(boolean debug)` | 初始化内存泄漏检测库 | debug: 是否开启调试模式 | 0表示成功，其他值表示失败 |
+| `hook(List<String> soNames)` | 开始监控指定so库 | soNames: so文件名列表 | 0表示成功，其他值表示失败 |
+| `unhook(List<String> soNames)` | 停止监控指定so库 | soNames: so文件名列表 | 0表示成功，其他值表示失败 |
+| `getLeakReport()` | 获取内存泄漏报告 | 无 | 报告字符串 |
+| `dumpLeakReport(String filePath)` | 导出报告到文件 | filePath: 文件路径 | 0表示成功，其他值表示失败 |
+| `getMemoryStats()` | 获取内存统计信息 | 无 | MemoryStats对象 |
+| `resetStats()` | 重置统计信息 | 无 | 无 |
+
+### MemoryStats类
+
+内存统计信息类，包含以下字段：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `totalAllocCount` | long | 总分配次数 |
+| `totalAllocSize` | long | 总分配大小（字节） |
+| `totalFreeCount` | long | 总释放次数 |
+| `totalFreeSize` | long | 总释放大小（字节） |
+| `currentAllocCount` | long | 当前未释放的分配次数 |
+| `currentAllocSize` | long | 当前未释放的内存大小（字节） |
+
+## 架构设计
+
+### 代码结构
+
+```
+sohook/
+├── src/main/
+│   ├── java/com/sohook/
+│   │   └── SoHook.java          # Java API接口
+│   └── cpp/
+│       ├── sohook_jni.c         # JNI实现
+│       ├── memory_tracker.h     # 内存追踪器头文件
+│       ├── memory_tracker.c     # 内存追踪器实现
+│       └── CMakeLists.txt       # CMake构建配置
+└── build.gradle                 # Gradle构建配置
+```
+
+### 工作原理
+
+1. **初始化阶段**：调用`bytehook_init()`初始化ByteHook库
+2. **Hook阶段**：使用`bytehook_hook_all()`对指定so库的malloc/calloc/realloc/free函数进行hook
+3. **监控阶段**：
+   - 当目标so库调用malloc/calloc/realloc时，记录分配信息
+   - 当目标so库调用free时，移除对应的分配记录
+   - 实时更新统计信息
+4. **报告阶段**：遍历未释放的内存记录，生成泄漏报告
+
+### 技术要点
+
+- 使用ByteHook进行PLT/GOT hook
+- 使用线程本地存储（TLS）防止递归调用
+- 使用互斥锁保护共享数据结构
+- 使用链表存储内存分配记录
+
+## 注意事项
+
+1. **性能影响**：内存监控会带来一定的性能开销，建议仅在调试阶段使用
+2. **线程安全**：所有API都是线程安全的
+3. **初始化顺序**：必须先调用`init()`再调用其他方法
+4. **文件权限**：导出报告时需要确保有文件写入权限
+5. **内存开销**：每个未释放的内存块都会占用额外的记录空间
+
+## 后续优化方向
+
+- [ ] 实现调用栈回溯（backtrace）
+- [ ] 支持更多内存分配函数（如memalign、posix_memalign等）
+- [ ] 优化内存记录存储结构（使用哈希表）
+- [ ] 支持内存分配热点分析
+- [ ] 支持实时监控和告警
+- [ ] 添加更详细的泄漏分析报告
+
+## 依赖
+
+- ByteHook: 用于函数hook
+- Android NDK: 用于编译native代码
+
+## 许可证
+
+与ByteHook保持一致
