@@ -42,12 +42,25 @@ static int g_hook_count = 0;
 // 防止递归调用的标志
 static __thread bool g_in_hook = false;
 
+// 原始的malloc/free函数指针（用于内部分配，避免递归）
+static void *(*original_malloc)(size_t) = NULL;
+static void (*original_free)(void *) = NULL;
+
 // 添加内存记录
 static void add_memory_record(void *ptr, size_t size, const char *so_name) {
   if (g_in_hook) return;
+  
+  // 设置标志，防止递归
   g_in_hook = true;
 
-  memory_record_t *record = (memory_record_t *)malloc(sizeof(memory_record_t));
+  // 使用原始malloc避免递归
+  memory_record_t *record = NULL;
+  if (original_malloc != NULL) {
+    record = (memory_record_t *)original_malloc(sizeof(memory_record_t));
+  } else {
+    record = (memory_record_t *)malloc(sizeof(memory_record_t));
+  }
+  
   if (record == NULL) {
     g_in_hook = false;
     return;
@@ -59,7 +72,18 @@ static void add_memory_record(void *ptr, size_t size, const char *so_name) {
   record->backtrace_size = 0;  // TODO: 实现backtrace获取
   record->next = NULL;
 
-  pthread_mutex_lock(&g_mutex);
+  // 使用trylock避免死锁，如果获取锁失败就放弃记录
+  if (pthread_mutex_trylock(&g_mutex) != 0) {
+    // 无法获取锁，放弃记录这次分配
+    if (original_free != NULL) {
+      original_free(record);
+    } else {
+      free(record);
+    }
+    g_in_hook = false;
+    return;
+  }
+  
   record->next = g_records_head;
   g_records_head = record;
 
@@ -69,19 +93,27 @@ static void add_memory_record(void *ptr, size_t size, const char *so_name) {
   g_stats.current_alloc_size += size;
   pthread_mutex_unlock(&g_mutex);
 
+  // 在调用任何可能触发malloc的函数之前重置标志
+  g_in_hook = false;
+
   if (g_debug) {
     LOGD("malloc: ptr=%p, size=%zu, so=%s", ptr, size, so_name ? so_name : "unknown");
   }
-
-  g_in_hook = false;
 }
 
 // 移除内存记录
 static void remove_memory_record(void *ptr) {
   if (g_in_hook || ptr == NULL) return;
+  
   g_in_hook = true;
 
-  pthread_mutex_lock(&g_mutex);
+  // 使用trylock避免死锁
+  if (pthread_mutex_trylock(&g_mutex) != 0) {
+    // 无法获取锁，放弃记录这次释放
+    g_in_hook = false;
+    return;
+  }
+  
   memory_record_t *prev = NULL;
   memory_record_t *curr = g_records_head;
 
@@ -98,12 +130,25 @@ static void remove_memory_record(void *ptr) {
       g_stats.current_alloc_count--;
       g_stats.current_alloc_size -= curr->size;
 
-      if (g_debug) {
-        LOGD("free: ptr=%p, size=%zu", ptr, curr->size);
-      }
+      // 保存size用于日志
+      size_t freed_size = curr->size;
 
-      free(curr);
-      break;
+      // 使用原始free避免递归
+      if (original_free != NULL) {
+        original_free(curr);
+      } else {
+        free(curr);
+      }
+      
+      pthread_mutex_unlock(&g_mutex);
+      
+      // 在调用任何可能触发malloc的函数之前重置标志
+      g_in_hook = false;
+
+      if (g_debug) {
+        LOGD("free: ptr=%p, size=%zu", ptr, freed_size);
+      }
+      return;
     }
     prev = curr;
     curr = curr->next;
@@ -115,10 +160,17 @@ static void remove_memory_record(void *ptr) {
 
 // malloc hook函数
 void *malloc_proxy(size_t size) {
+  if (g_debug && !g_in_hook) {
+    LOGD("malloc_proxy called: size=%zu", size);
+  }
+  
   void *result = BYTEHOOK_CALL_PREV(malloc_proxy, void *(*)(size_t), size);
+  
   if (result != NULL && !g_in_hook) {
     add_memory_record(result, size, "tracked");
   }
+  
+  BYTEHOOK_POP_STACK();
   return result;
 }
 
@@ -128,6 +180,7 @@ void *calloc_proxy(size_t nmemb, size_t size) {
   if (result != NULL && !g_in_hook) {
     add_memory_record(result, nmemb * size, "tracked");
   }
+  BYTEHOOK_POP_STACK();
   return result;
 }
 
@@ -139,9 +192,11 @@ void *realloc_proxy(void *ptr, size_t size) {
 
   void *result = BYTEHOOK_CALL_PREV(realloc_proxy, void *(*)(void *, size_t), ptr, size);
 
-  if (result != NULL && size > 0 && !g_in_hook) {
+  if (result != NULL && !g_in_hook) {
     add_memory_record(result, size, "tracked");
   }
+
+  BYTEHOOK_POP_STACK();
   return result;
 }
 
@@ -151,6 +206,7 @@ void free_proxy(void *ptr) {
     remove_memory_record(ptr);
   }
   BYTEHOOK_CALL_PREV(free_proxy, void (*)(void *), ptr);
+  BYTEHOOK_POP_STACK();
 }
 
 // 初始化内存追踪器
@@ -162,6 +218,15 @@ int memory_tracker_init(bool debug) {
 
   g_debug = debug;
 
+  // 获取原始的malloc/free函数指针，用于内部分配
+  original_malloc = dlsym(RTLD_DEFAULT, "malloc");
+  original_free = dlsym(RTLD_DEFAULT, "free");
+  
+  if (original_malloc == NULL || original_free == NULL) {
+    LOGE("Failed to get original malloc/free");
+    return -1;
+  }
+
   // 初始化bytehook
   int ret = bytehook_init(BYTEHOOK_MODE_AUTOMATIC, debug);
   if (ret != BYTEHOOK_STATUS_CODE_OK) {
@@ -172,6 +237,21 @@ int memory_tracker_init(bool debug) {
   g_initialized = true;
   LOGI("Memory tracker initialized (debug=%d)", debug);
   return 0;
+}
+
+// Hook回调函数
+static void hook_callback(bytehook_stub_t task_stub, int status_code, const char *caller_path_name,
+                         const char *sym_name, void *new_func, void *prev_func, void *arg) {
+  (void)task_stub;
+  (void)new_func;
+  (void)prev_func;
+  (void)arg;
+  
+  if (status_code == BYTEHOOK_STATUS_CODE_OK) {
+    LOGI("Hook success: %s in %s", sym_name, caller_path_name ? caller_path_name : "unknown");
+  } else {
+    LOGW("Hook failed: %s in %s, status=%d", sym_name, caller_path_name ? caller_path_name : "unknown", status_code);
+  }
 }
 
 // 开始追踪指定so库的内存分配
@@ -192,22 +272,47 @@ int memory_tracker_hook(const char **so_names, int count) {
     const char *so_name = so_names[i];
     if (so_name == NULL) continue;
 
-    LOGI("Hooking memory functions in: %s", so_name);
+    LOGI("=== Hooking memory functions in: %s ===", so_name);
+    LOGI("Using bytehook_hook_single - caller: %s", so_name);
 
-    // Hook malloc
+    // Hook malloc - hook libsample.so调用libc.so的malloc
+    LOGI("Calling bytehook_hook_single for malloc...");
     g_malloc_stubs[g_hook_count] =
-        bytehook_hook_all(so_name, "malloc", (void *)malloc_proxy, NULL, NULL);
+        bytehook_hook_single(so_name, NULL, "malloc", (void *)malloc_proxy, hook_callback, NULL);
+    if (g_malloc_stubs[g_hook_count] == NULL) {
+      LOGE("  malloc hook FAILED - stub is NULL");
+    } else {
+      LOGI("  malloc stub: %p", g_malloc_stubs[g_hook_count]);
+    }
 
     // Hook calloc
+    LOGI("Calling bytehook_hook_single for calloc...");
     g_calloc_stubs[g_hook_count] =
-        bytehook_hook_all(so_name, "calloc", (void *)calloc_proxy, NULL, NULL);
+        bytehook_hook_single(so_name, NULL, "calloc", (void *)calloc_proxy, hook_callback, NULL);
+    if (g_calloc_stubs[g_hook_count] == NULL) {
+      LOGE("  calloc hook FAILED - stub is NULL");
+    } else {
+      LOGI("  calloc stub: %p", g_calloc_stubs[g_hook_count]);
+    }
 
     // Hook realloc
+    LOGI("Calling bytehook_hook_single for realloc...");
     g_realloc_stubs[g_hook_count] =
-        bytehook_hook_all(so_name, "realloc", (void *)realloc_proxy, NULL, NULL);
+        bytehook_hook_single(so_name, NULL, "realloc", (void *)realloc_proxy, hook_callback, NULL);
+    if (g_realloc_stubs[g_hook_count] == NULL) {
+      LOGE("  realloc hook FAILED - stub is NULL");
+    } else {
+      LOGI("  realloc stub: %p", g_realloc_stubs[g_hook_count]);
+    }
 
     // Hook free
-    g_free_stubs[g_hook_count] = bytehook_hook_all(so_name, "free", (void *)free_proxy, NULL, NULL);
+    LOGI("Calling bytehook_hook_single for free...");
+    g_free_stubs[g_hook_count] = bytehook_hook_single(so_name, NULL, "free", (void *)free_proxy, hook_callback, NULL);
+    if (g_free_stubs[g_hook_count] == NULL) {
+      LOGE("  free hook FAILED - stub is NULL");
+    } else {
+      LOGI("  free stub: %p", g_free_stubs[g_hook_count]);
+    }
 
     g_hook_count++;
   }
@@ -259,15 +364,20 @@ char *memory_tracker_get_leak_report(void) {
     return strdup("Memory tracker not initialized");
   }
 
-  pthread_mutex_lock(&g_mutex);
-
-  // 计算需要的缓冲区大小
+  // 先分配缓冲区，避免在持有锁时调用malloc
   size_t buffer_size = 4096;
-  char *report = (char *)malloc(buffer_size);
+  char *report = NULL;
+  if (original_malloc != NULL) {
+    report = (char *)original_malloc(buffer_size);
+  } else {
+    report = (char *)malloc(buffer_size);
+  }
+  
   if (report == NULL) {
-    pthread_mutex_unlock(&g_mutex);
     return NULL;
   }
+
+  pthread_mutex_lock(&g_mutex);
 
   int offset = 0;
   offset += snprintf(report + offset, buffer_size - offset,
@@ -282,27 +392,41 @@ char *memory_tracker_get_leak_report(void) {
                      (unsigned long long)g_stats.current_alloc_count,
                      (unsigned long long)g_stats.current_alloc_size);
 
-  // 列出所有未释放的内存
+  // 列出所有未释放的内存（最多100个）
   int leak_count = 0;
   memory_record_t *curr = g_records_head;
-  while (curr != NULL && leak_count < 100) {  // 最多显示100个泄漏
+  while (curr != NULL && leak_count < 100) {
+    int needed = snprintf(NULL, 0, "Leak #%d: ptr=%p, size=%zu, so=%s\n",
+                         leak_count + 1, curr->ptr, curr->size,
+                         curr->so_name ? curr->so_name : "unknown");
+    
+    // 检查缓冲区是否足够
+    if (buffer_size - offset < (size_t)needed + 1) {
+      // 需要扩展缓冲区
+      size_t new_size = buffer_size * 2;
+      char *new_report = NULL;
+      if (original_malloc != NULL) {
+        new_report = (char *)original_malloc(new_size);
+        if (new_report != NULL) {
+          memcpy(new_report, report, offset);
+          original_free(report);
+        }
+      }
+      
+      if (new_report == NULL) {
+        // 扩展失败，停止添加更多泄漏信息
+        break;
+      }
+      
+      report = new_report;
+      buffer_size = new_size;
+    }
+    
     offset += snprintf(report + offset, buffer_size - offset, "Leak #%d: ptr=%p, size=%zu, so=%s\n",
                        leak_count + 1, curr->ptr, curr->size,
                        curr->so_name ? curr->so_name : "unknown");
     curr = curr->next;
     leak_count++;
-
-    // 如果缓冲区不够，扩展
-    if (buffer_size - offset < 256) {
-      buffer_size *= 2;
-      char *new_report = (char *)realloc(report, buffer_size);
-      if (new_report == NULL) {
-        free(report);
-        pthread_mutex_unlock(&g_mutex);
-        return NULL;
-      }
-      report = new_report;
-    }
   }
 
   pthread_mutex_unlock(&g_mutex);
@@ -323,13 +447,22 @@ int memory_tracker_dump_leak_report(const char *file_path) {
   int fd = open(file_path, O_CREAT | O_WRONLY | O_CLOEXEC | O_TRUNC, S_IRUSR | S_IWUSR);
   if (fd < 0) {
     LOGE("Failed to open file: %s", file_path);
-    free(report);
+    if (original_free != NULL) {
+      original_free(report);
+    } else {
+      free(report);
+    }
     return -1;
   }
 
   ssize_t written = write(fd, report, strlen(report));
   close(fd);
-  free(report);
+  
+  if (original_free != NULL) {
+    original_free(report);
+  } else {
+    free(report);
+  }
 
   if (written < 0) {
     LOGE("Failed to write to file: %s", file_path);
@@ -357,7 +490,12 @@ void memory_tracker_reset_stats(void) {
   memory_record_t *curr = g_records_head;
   while (curr != NULL) {
     memory_record_t *next = curr->next;
-    free(curr);
+    // 使用原始free避免递归
+    if (original_free != NULL) {
+      original_free(curr);
+    } else {
+      free(curr);
+    }
     curr = next;
   }
   g_records_head = NULL;

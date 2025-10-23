@@ -50,7 +50,14 @@ static void hacker_jni_dump_records(JNIEnv *env, jobject thiz, jstring pathname)
 
 static void *libsample_handle = NULL;
 typedef void (*sample_test_strlen_t)(int);
+typedef void (*sample_alloc_memory_t)(int);
+typedef void (*sample_free_memory_t)(int);
+typedef void (*sample_free_all_memory_t)(void);
+
 static sample_test_strlen_t sample_test_strlen = NULL;
+static sample_alloc_memory_t sample_alloc_memory = NULL;
+static sample_free_memory_t sample_free_memory = NULL;
+static sample_free_all_memory_t sample_free_all_memory = NULL;
 
 static void hacker_jni_do_dlopen(JNIEnv *env, jobject thiz) {
   (void)env;
@@ -63,6 +70,9 @@ static void hacker_jni_do_dlopen(JNIEnv *env, jobject thiz) {
     libsample_handle = dlopen("libsample.so", RTLD_NOW);
     if (NULL != libsample_handle) {
       sample_test_strlen = (sample_test_strlen_t)dlsym(libsample_handle, "sample_test_strlen");
+      sample_alloc_memory = (sample_alloc_memory_t)dlsym(libsample_handle, "sample_alloc_memory");
+      sample_free_memory = (sample_free_memory_t)dlsym(libsample_handle, "sample_free_memory");
+      sample_free_all_memory = (sample_free_all_memory_t)dlsym(libsample_handle, "sample_free_all_memory");
     }
   }
 }
@@ -74,6 +84,27 @@ static void hacker_jni_do_run(JNIEnv *env, jobject thiz, jint benchmark) {
   if (NULL != sample_test_strlen) sample_test_strlen(benchmark);
 }
 
+static void hacker_jni_alloc_memory(JNIEnv *env, jobject thiz, jint count) {
+  (void)env;
+  (void)thiz;
+
+  if (NULL != sample_alloc_memory) sample_alloc_memory(count);
+}
+
+static void hacker_jni_free_memory(JNIEnv *env, jobject thiz, jint count) {
+  (void)env;
+  (void)thiz;
+
+  if (NULL != sample_free_memory) sample_free_memory(count);
+}
+
+static void hacker_jni_free_all_memory(JNIEnv *env, jobject thiz) {
+  (void)env;
+  (void)thiz;
+
+  if (NULL != sample_free_all_memory) sample_free_all_memory();
+}
+
 static void hacker_jni_do_dlclose(JNIEnv *env, jobject thiz) {
   (void)env;
   (void)thiz;
@@ -83,6 +114,9 @@ static void hacker_jni_do_dlclose(JNIEnv *env, jobject thiz) {
 
   if (NULL != libsample_handle) {
     sample_test_strlen = NULL;
+    sample_alloc_memory = NULL;
+    sample_free_memory = NULL;
+    sample_free_all_memory = NULL;
     dlclose(libsample_handle);
     libsample_handle = NULL;
   }
@@ -94,7 +128,10 @@ static JNINativeMethod hacker_jni_methods[] = {
     {"nativeDumpRecords", "(Ljava/lang/String;)V", (void *)hacker_jni_dump_records},
     {"nativeDoDlopen", "()V", (void *)hacker_jni_do_dlopen},
     {"nativeDoDlclose", "()V", (void *)hacker_jni_do_dlclose},
-    {"nativeDoRun", "(I)V", (void *)hacker_jni_do_run}};
+    {"nativeDoRun", "(I)V", (void *)hacker_jni_do_run},
+    {"nativeAllocMemory", "(I)V", (void *)hacker_jni_alloc_memory},
+    {"nativeFreeMemory", "(I)V", (void *)hacker_jni_free_memory},
+    {"nativeFreeAllMemory", "()V", (void *)hacker_jni_free_all_memory}};
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
   JNIEnv *env;

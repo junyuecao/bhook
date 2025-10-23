@@ -22,6 +22,9 @@ public class SoHookTestActivity extends AppCompatActivity {
     private boolean isHooked = false;
     private Handler handler = new Handler(Looper.getMainLooper());
     private Runnable updateStatsRunnable;
+    
+    // 缓存上次的统计数据，避免重复打印日志
+    private SoHook.MemoryStats lastStats = null;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -67,8 +70,19 @@ public class SoHookTestActivity extends AppCompatActivity {
             return;
         }
 
-        // 监控libc.so和libsample.so
-        List<String> soNames = Arrays.asList("libc.so", "libsample.so");
+        // 先加载libsample.so
+        NativeHacker.doDlopen();
+        Log.i(TAG, "已加载libsample.so");
+        
+        // 等待一下确保so加载完成
+        try {
+            Thread.sleep(100);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+        // 监控libsample.so（不要监控libc.so，会导致死锁）
+        List<String> soNames = Arrays.asList("libsample.so");
         int ret = SoHook.hook(soNames);
         
         if (ret == 0) {
@@ -97,7 +111,7 @@ public class SoHookTestActivity extends AppCompatActivity {
             return;
         }
 
-        List<String> soNames = Arrays.asList("libc.so", "libsample.so");
+        List<String> soNames = Arrays.asList("libsample.so");
         int ret = SoHook.unhook(soNames);
         
         if (ret == 0) {
@@ -149,16 +163,24 @@ public class SoHookTestActivity extends AppCompatActivity {
     }
 
     public void onAllocMemoryClick(View view) {
-        // 触发一些内存分配操作
-        NativeHacker.doDlopen();
-        NativeHacker.doRun(false);
-        showToast("已触发内存分配操作");
+        if (!isHooked) {
+            showToast("请先开始监控");
+            return;
+        }
+        
+        // 分配10个内存块
+        NativeHacker.allocMemory(10);
+        showToast("已分配10个内存块");
+        
+        Log.i(TAG, "分配了10个内存块");
     }
 
     public void onFreeMemoryClick(View view) {
-        // 触发内存释放操作
-        NativeHacker.doDlclose();
-        showToast("已触发内存释放操作");
+        // 释放5个内存块
+        NativeHacker.freeMemory(5);
+        showToast("已释放5个内存块");
+        
+        Log.i(TAG, "释放了5个内存块");
     }
 
     private void updateStats() {
@@ -175,7 +197,24 @@ public class SoHookTestActivity extends AppCompatActivity {
         
         tvStats.setText(sb.toString());
         
-        Log.d(TAG, "内存统计: " + stats.toString());
+        // 只在数据变化时打印日志
+        if (lastStats == null || !statsEquals(lastStats, stats)) {
+            Log.d(TAG, "内存统计变化: " + stats.toString());
+            lastStats = new SoHook.MemoryStats(
+                stats.totalAllocCount, stats.totalAllocSize,
+                stats.totalFreeCount, stats.totalFreeSize,
+                stats.currentAllocCount, stats.currentAllocSize
+            );
+        }
+    }
+    
+    private boolean statsEquals(SoHook.MemoryStats s1, SoHook.MemoryStats s2) {
+        return s1.totalAllocCount == s2.totalAllocCount &&
+               s1.totalAllocSize == s2.totalAllocSize &&
+               s1.totalFreeCount == s2.totalFreeCount &&
+               s1.totalFreeSize == s2.totalFreeSize &&
+               s1.currentAllocCount == s2.currentAllocCount &&
+               s1.currentAllocSize == s2.currentAllocSize;
     }
 
     private String formatBytes(long bytes) {

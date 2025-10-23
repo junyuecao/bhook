@@ -145,6 +145,15 @@ public class SoHook {
         public long currentAllocCount = 0;    // 当前未释放的分配次数
         public long currentAllocSize = 0;     // 当前未释放的内存大小（字节）
 
+        public MemoryStats() {}
+        public MemoryStats(long totalAllocCount, long totalAllocSize, long totalFreeCount, long totalFreeSize, long currentAllocCount, long currentAllocSize) {
+            this.totalAllocCount = totalAllocCount;
+            this.totalAllocSize = totalAllocSize;
+            this.totalFreeCount = totalFreeCount;
+            this.totalFreeSize = totalFreeSize;
+            this.currentAllocCount = currentAllocCount;
+            this.currentAllocSize = currentAllocSize;
+        }
         @Override
         public String toString() {
             return "MemoryStats{" +

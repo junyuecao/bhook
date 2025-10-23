@@ -32,7 +32,7 @@
                 style="@style/Theme.Button"
                 android:id="@+id/btn_start_hook"
                 android:onClick="onStartHookClick"
-                android:text="开始监控 (libc.so, libsample.so)"
+                android:text="开始监控 (libsample.so)"
                 tools:ignore="UsingOnClickInXml" />
 
             <Button
@@ -51,14 +51,14 @@
                 style="@style/Theme.Button"
                 android:id="@+id/btn_alloc_memory"
                 android:onClick="onAllocMemoryClick"
-                android:text="分配内存 (dlopen + run)"
+                android:text="分配内存 (10个块)"
                 tools:ignore="UsingOnClickInXml" />
 
             <Button
                 style="@style/Theme.Button"
                 android:id="@+id/btn_free_memory"
                 android:onClick="onFreeMemoryClick"
-                android:text="释放内存 (dlclose)"
+                android:text="释放内存 (5个块)"
                 tools:ignore="UsingOnClickInXml" />
 
             <TextView

@@ -26,9 +26,9 @@ set_target_properties(hacker PROPERTIES LINK_FLAGS "${ARCH_LINK_FLAGS}")
 target_link_libraries(hacker log bytehook::bytehook)
 
 # libsample.so
-add_library(sample SHARED sample.c)
-target_compile_features(sample PUBLIC c_std_17)
-target_compile_options(sample PUBLIC -Weverything -Werror)
+add_library(sample SHARED sample.cpp)
+target_compile_features(sample PUBLIC cxx_std_17)
+target_compile_options(sample PUBLIC -Weverything -Werror -Wno-c++98-compat-pedantic -Wno-zero-as-null-pointer-constant -Wno-old-style-cast)
 target_include_directories(hacker PUBLIC .)
 set_target_properties(sample PROPERTIES LINK_FLAGS "${ARCH_LINK_FLAGS}")
 target_link_libraries(sample log)
