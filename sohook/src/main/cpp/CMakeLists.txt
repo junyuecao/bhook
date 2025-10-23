@@ -29,6 +29,7 @@ target_link_libraries(sohook
     log
     android
 )
+target_compile_options(sohook PUBLIC -Wno-unused-parameter)
 
 # 设置输出目录
 set_target_properties(sohook PROPERTIES

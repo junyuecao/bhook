@@ -67,6 +67,7 @@ dependencies {
         implementation 'com.bytedance:bytehook:' + rootProject.ext.POM_VERSION_NAME
     }
     implementation project(':bytehook_systest')
+    implementation project(':sohook')
 }
 
 apply from: rootProject.file('gradle/prefab_bypass.gradle')

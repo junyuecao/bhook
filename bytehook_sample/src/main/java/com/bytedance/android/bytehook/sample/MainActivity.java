@@ -230,4 +230,9 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     }
+
+    public void onSoHookTestClick(View view) {
+        Intent intent = new Intent(this, SoHookTestActivity.class);
+        startActivity(intent);
+    }
 }

@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    tools:context=".SoHookTestActivity">
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                style="@style/Theme.TextView.Top"
+                android:text="SoHook 内存泄漏检测测试"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:gravity="center"
+                android:paddingBottom="16dp" />
+
+            <TextView
+                style="@style/Theme.TextView.Title"
+                android:text="1. 控制监控" />
+
+            <Button
+                style="@style/Theme.Button"
+                android:id="@+id/btn_start_hook"
+                android:onClick="onStartHookClick"
+                android:text="开始监控 (libc.so, libsample.so)"
+                tools:ignore="UsingOnClickInXml" />
+
+            <Button
+                style="@style/Theme.Button"
+                android:id="@+id/btn_stop_hook"
+                android:onClick="onStopHookClick"
+                android:text="停止监控"
+                android:enabled="false"
+                tools:ignore="UsingOnClickInXml" />
+
+            <TextView
+                style="@style/Theme.TextView.Title"
+                android:text="2. 触发内存操作" />
+
+            <Button
+                style="@style/Theme.Button"
+                android:id="@+id/btn_alloc_memory"
+                android:onClick="onAllocMemoryClick"
+                android:text="分配内存 (dlopen + run)"
+                tools:ignore="UsingOnClickInXml" />
+
+            <Button
+                style="@style/Theme.Button"
+                android:id="@+id/btn_free_memory"
+                android:onClick="onFreeMemoryClick"
+                android:text="释放内存 (dlclose)"
+                tools:ignore="UsingOnClickInXml" />
+
+            <TextView
+                style="@style/Theme.TextView.Title"
+                android:text="3. 查看统计" />
+
+            <Button
+                style="@style/Theme.Button"
+                android:id="@+id/btn_get_stats"
+                android:onClick="onGetStatsClick"
+                android:text="刷新统计信息"
+                tools:ignore="UsingOnClickInXml" />
+
+            <TextView
+                android:id="@+id/tv_stats"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="#F5F5F5"
+                android:padding="12dp"
+                android:textSize="14sp"
+                android:fontFamily="monospace"
+                android:text="统计信息将显示在这里..."
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="16dp" />
+
+            <TextView
+                style="@style/Theme.TextView.Title"
+                android:text="4. 泄漏报告" />
+
+            <Button
+                style="@style/Theme.Button"
+                android:id="@+id/btn_get_report"
+                android:onClick="onGetReportClick"
+                android:text="生成泄漏报告 (输出到logcat)"
+                tools:ignore="UsingOnClickInXml" />
+
+            <Button
+                style="@style/Theme.Button"
+                android:id="@+id/btn_dump_report"
+                android:onClick="onDumpReportClick"
+                android:text="导出报告到文件"
+                tools:ignore="UsingOnClickInXml" />
+
+            <TextView
+                style="@style/Theme.TextView.Title"
+                android:text="5. 其他操作" />
+
+            <Button
+                style="@style/Theme.Button"
+                android:id="@+id/btn_reset_stats"
+                android:onClick="onResetStatsClick"
+                android:text="重置统计信息"
+                tools:ignore="UsingOnClickInXml" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="提示: 查看详细日志请使用\nadb logcat -s SoHookTest"
+                android:textSize="12sp"
+                android:textColor="#666666"
+                android:padding="12dp"
+                android:layout_marginTop="16dp"
+                android:background="#FFFACD" />
+
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

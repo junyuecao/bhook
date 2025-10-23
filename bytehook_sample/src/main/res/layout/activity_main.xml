@@ -99,6 +99,15 @@
                 android:text="dump records (to FD)"
                 tools:ignore="UsingOnClickInXml" />
 
+            <TextView style="@style/Theme.TextView.Title"
+                android:text="4. SoHook memory leak detection"  />
+
+            <Button style="@style/Theme.Button.Red"
+                android:id="@+id/soHookTest"
+                android:onClick="onSoHookTestClick"
+                android:text="SoHook 内存泄漏检测测试"
+                tools:ignore="UsingOnClickInXml" />
+
         </LinearLayout>
     </ScrollView>
 </LinearLayout>
