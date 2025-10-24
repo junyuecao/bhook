@@ -12,6 +12,16 @@ add_compile_options(-Wall -Wextra -Werror)
 # 查找bytehook库
 find_package(bytehook REQUIRED CONFIG)
 
+# 调试信息
+message(STATUS "bytehook_FOUND: ${bytehook_FOUND}")
+if(TARGET bytehook::bytehook)
+    message(STATUS "✓ bytehook::bytehook target found")
+    get_target_property(BYTEHOOK_LOCATION bytehook::bytehook IMPORTED_LOCATION)
+    message(STATUS "  IMPORTED_LOCATION: ${BYTEHOOK_LOCATION}")
+else()
+    message(FATAL_ERROR "✗ bytehook::bytehook target NOT found")
+endif()
+
 # 创建sohook共享库
 add_library(sohook SHARED
     sohook_jni.c

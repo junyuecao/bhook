@@ -65,3 +65,6 @@ dependencies {
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
 }
+
+// 应用 prefab bypass 配置（支持 shadowhook 依赖）
+apply from: rootProject.file('gradle/prefab_bypass.gradle')
