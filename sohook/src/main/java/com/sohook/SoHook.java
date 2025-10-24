@@ -23,14 +23,24 @@ public class SoHook {
      * @return 0表示成功，其他值表示失败
      */
     public static int init(boolean debug) {
+        return init(debug, false);
+    }
+
+    /**
+     * 初始化内存泄漏检测库
+     * @param debug 是否开启调试模式
+     * @param enableBacktrace 是否启用栈回溯（会显著影响性能，约10-20x慢）
+     * @return 0表示成功，其他值表示失败
+     */
+    public static int init(boolean debug, boolean enableBacktrace) {
         if (sInitialized) {
             Log.w(TAG, "SoHook already initialized");
             return 0;
         }
-        int ret = nativeInit(debug);
+        int ret = nativeInit(debug, enableBacktrace);
         if (ret == 0) {
             sInitialized = true;
-            Log.i(TAG, "SoHook initialized successfully");
+            Log.i(TAG, "SoHook initialized successfully (backtrace=" + enableBacktrace + ")");
         } else {
             Log.e(TAG, "SoHook initialization failed with code: " + ret);
         }
@@ -125,14 +135,42 @@ public class SoHook {
         nativeResetStats();
     }
 
+    /**
+     * 启用或禁用栈回溯
+     * @param enable true 启用，false 禁用
+     * 注意：启用栈回溯会显著影响性能（约10-20x慢）
+     */
+    public static void setBacktraceEnabled(boolean enable) {
+        if (!sInitialized) {
+            Log.e(TAG, "SoHook not initialized");
+            return;
+        }
+        nativeSetBacktraceEnabled(enable);
+        Log.i(TAG, "Backtrace " + (enable ? "enabled" : "disabled"));
+    }
+
+    /**
+     * 检查栈回溯是否启用
+     * @return true 已启用，false 未启用
+     */
+    public static boolean isBacktraceEnabled() {
+        if (!sInitialized) {
+            Log.e(TAG, "SoHook not initialized");
+            return false;
+        }
+        return nativeIsBacktraceEnabled();
+    }
+
     // Native methods
-    private static native int nativeInit(boolean debug);
+    private static native int nativeInit(boolean debug, boolean enableBacktrace);
     private static native int nativeHook(String[] soNames);
     private static native int nativeUnhook(String[] soNames);
     private static native String nativeGetLeakReport();
     private static native int nativeDumpLeakReport(String filePath);
     private static native MemoryStats nativeGetMemoryStats();
     private static native void nativeResetStats();
+    private static native void nativeSetBacktraceEnabled(boolean enable);
+    private static native boolean nativeIsBacktraceEnabled();
 
     /**
      * 内存统计信息类

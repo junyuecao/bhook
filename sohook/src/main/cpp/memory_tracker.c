@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <unwind.h>
 
 #include "bytehook.h"
 #include "memory_hash_table.h"
@@ -26,6 +27,7 @@
 // 全局状态
 static bool g_initialized = false;
 static bool g_debug = false;
+static bool g_backtrace_enabled = false;
 
 // Hook 管理锁
 static pthread_mutex_t g_hook_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -53,6 +55,29 @@ static __thread bool g_in_hook = false;
 static void *(*original_malloc)(size_t) = NULL;
 static void (*original_free)(void *) = NULL;
 
+// 栈回溯辅助结构
+struct BacktraceState {
+  void **current;
+  void **end;
+};
+
+// 栈回溯回调
+static _Unwind_Reason_Code unwind_callback(struct _Unwind_Context *context, void *arg) {
+  struct BacktraceState *state = (struct BacktraceState *)arg;
+  uintptr_t pc = _Unwind_GetIP(context);
+  if (pc && state->current < state->end) {
+    *state->current++ = (void *)pc;
+  }
+  return state->current < state->end ? _URC_NO_REASON : _URC_END_OF_STACK;
+}
+
+// 捕获当前调用栈
+static int capture_backtrace(void **buffer, int max_frames) {
+  struct BacktraceState state = {buffer, buffer + max_frames};
+  _Unwind_Backtrace(unwind_callback, &state);
+  return state.current - buffer;
+}
+
 // 添加内存记录（哈希表版本）
 static void add_memory_record(void *ptr, size_t size, const char *so_name) {
   if (g_in_hook) return;
@@ -70,8 +95,17 @@ static void add_memory_record(void *ptr, size_t size, const char *so_name) {
   record->ptr = ptr;
   record->size = size;
   record->so_name = so_name;
-  record->backtrace_size = 0;  // TODO: 实现backtrace获取
   record->next = NULL;
+  
+  // 可选的栈回溯（如果启用）
+  if (g_backtrace_enabled) {
+    record->backtrace_size = capture_backtrace(record->backtrace, 16);
+    if (g_debug) {
+      LOGD("Captured backtrace: %d frames for ptr=%p", record->backtrace_size, ptr);
+    }
+  } else {
+    record->backtrace_size = 0;
+  }
 
   // 使用哈希表添加记录
   if (hash_table_add(record) != 0) {
@@ -178,13 +212,18 @@ void free_proxy(void *ptr) {
 }
 
 // 初始化内存追踪器
-int memory_tracker_init(bool debug) {
+int memory_tracker_init(bool debug, bool enable_backtrace) {
   if (g_initialized) {
     LOGW("Memory tracker already initialized");
     return 0;
   }
 
   g_debug = debug;
+  g_backtrace_enabled = enable_backtrace;
+  
+  if (enable_backtrace) {
+    LOGW("Backtrace enabled - this will significantly impact performance!");
+  }
 
   // 获取原始的malloc/free函数指针，用于内部分配
   original_malloc = dlsym(RTLD_DEFAULT, "malloc");
@@ -375,9 +414,20 @@ static bool leak_report_callback(memory_record_t *record, void *user_data) {
     return false;  // 停止遍历
   }
   
-  int needed = snprintf(NULL, 0, "Leak #%d: ptr=%p, size=%zu, so=%s\n",
-                       *ctx->leak_count + 1, record->ptr, record->size,
-                       record->so_name ? record->so_name : "unknown");
+  // 计算需要的空间（包括栈回溯）
+  int base_needed = snprintf(NULL, 0, "Leak #%d: ptr=%p, size=%zu, so=%s\n",
+                            *ctx->leak_count + 1, record->ptr, record->size,
+                            record->so_name ? record->so_name : "unknown");
+  
+  int backtrace_needed = 0;
+  if (record->backtrace_size > 0) {
+    backtrace_needed = snprintf(NULL, 0, "  Backtrace (%d frames):\n", record->backtrace_size);
+    for (int i = 0; i < record->backtrace_size; i++) {
+      backtrace_needed += snprintf(NULL, 0, "    #%d: %p\n", i, record->backtrace[i]);
+    }
+  }
+  
+  int needed = base_needed + backtrace_needed;
   
   // 检查缓冲区是否足够
   if (*ctx->buffer_size - *ctx->offset < (size_t)needed + 1) {
@@ -400,10 +450,42 @@ static bool leak_report_callback(memory_record_t *record, void *user_data) {
     *ctx->buffer_size = new_size;
   }
   
+  // 写入基本信息
   *ctx->offset += snprintf(*ctx->report + *ctx->offset, *ctx->buffer_size - *ctx->offset,
                           "Leak #%d: ptr=%p, size=%zu, so=%s\n",
                           *ctx->leak_count + 1, record->ptr, record->size,
                           record->so_name ? record->so_name : "unknown");
+  
+  // 写入栈回溯信息（如果有）
+  if (record->backtrace_size > 0) {
+    LOGD("Writing backtrace for leak #%d: %d frames", *ctx->leak_count + 1, record->backtrace_size);
+    *ctx->offset += snprintf(*ctx->report + *ctx->offset, *ctx->buffer_size - *ctx->offset,
+                            "  Backtrace (%d frames):\n", record->backtrace_size);
+    for (int i = 0; i < record->backtrace_size; i++) {
+      // 尝试解析符号
+      Dl_info info;
+      if (dladdr(record->backtrace[i], &info) && info.dli_sname) {
+        // 成功解析到符号名
+        const char *symbol = info.dli_sname;
+        const char *lib = info.dli_fname ? strrchr(info.dli_fname, '/') : NULL;
+        lib = lib ? lib + 1 : info.dli_fname;
+        
+        // 计算偏移
+        ptrdiff_t offset = (char *)record->backtrace[i] - (char *)info.dli_saddr;
+        
+        *ctx->offset += snprintf(*ctx->report + *ctx->offset, *ctx->buffer_size - *ctx->offset,
+                                "    #%d: %p %s+%td (%s)\n", 
+                                i, record->backtrace[i], symbol, offset, lib ? lib : "?");
+      } else {
+        // 无法解析，只显示地址
+        *ctx->offset += snprintf(*ctx->report + *ctx->offset, *ctx->buffer_size - *ctx->offset,
+                                "    #%d: %p\n", i, record->backtrace[i]);
+      }
+    }
+  } else {
+    LOGD("No backtrace for leak #%d (backtrace_size=%d)", *ctx->leak_count + 1, record->backtrace_size);
+  }
+  
   (*ctx->leak_count)++;
   return true;  // 继续遍历
 }
@@ -537,4 +619,19 @@ void memory_tracker_reset_stats(void) {
   atomic_store_explicit(&g_total_free_size, 0, memory_order_relaxed);
   
   LOGI("Memory stats reset");
+}
+
+// 启用或禁用栈回溯
+void memory_tracker_set_backtrace_enabled(bool enable) {
+  if (enable && !g_backtrace_enabled) {
+    LOGW("Enabling backtrace - this will significantly impact performance!");
+  } else if (!enable && g_backtrace_enabled) {
+    LOGI("Disabling backtrace");
+  }
+  g_backtrace_enabled = enable;
+}
+
+// 检查栈回溯是否启用
+bool memory_tracker_is_backtrace_enabled(void) {
+  return g_backtrace_enabled;
 }

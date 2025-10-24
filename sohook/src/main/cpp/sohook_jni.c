@@ -17,12 +17,12 @@
 #define SOHOOK_JNI_CLASS_NAME "com/sohook/SoHook"
 
 // Native method: init
-static jint sohook_jni_init(JNIEnv *env, jclass clazz, jboolean debug) {
+static jint sohook_jni_init(JNIEnv *env, jclass clazz, jboolean debug, jboolean enable_backtrace) {
   (void)env;
   (void)clazz;
 
-  LOGI("Initializing SoHook (debug=%d)", debug);
-  return memory_tracker_init(debug);
+  LOGI("Initializing SoHook (debug=%d, enable_backtrace=%d)", debug, enable_backtrace);
+  return memory_tracker_init((bool)debug, (bool)enable_backtrace);
 }
 
 // Native method: hook
@@ -218,16 +218,34 @@ static void sohook_jni_reset_stats(JNIEnv *env, jclass clazz) {
   memory_tracker_reset_stats();
 }
 
+// Native method: set backtrace enabled
+static void sohook_jni_set_backtrace_enabled(JNIEnv *env, jclass clazz, jboolean enable) {
+  (void)env;
+  (void)clazz;
+  
+  memory_tracker_set_backtrace_enabled((bool)enable);
+}
+
+// Native method: is backtrace enabled
+static jboolean sohook_jni_is_backtrace_enabled(JNIEnv *env, jclass clazz) {
+  (void)env;
+  (void)clazz;
+  
+  return (jboolean)memory_tracker_is_backtrace_enabled();
+}
+
 // JNI方法注册表
 static JNINativeMethod sohook_jni_methods[] = {
-    {"nativeInit", "(Z)I", (void *)sohook_jni_init},
+    {"nativeInit", "(ZZ)I", (void *)sohook_jni_init},
     {"nativeHook", "([Ljava/lang/String;)I", (void *)sohook_jni_hook},
     {"nativeUnhook", "([Ljava/lang/String;)I", (void *)sohook_jni_unhook},
     {"nativeGetLeakReport", "()Ljava/lang/String;", (void *)sohook_jni_get_leak_report},
     {"nativeDumpLeakReport", "(Ljava/lang/String;)I", (void *)sohook_jni_dump_leak_report},
     {"nativeGetMemoryStats", "()Lcom/sohook/SoHook$MemoryStats;",
      (void *)sohook_jni_get_memory_stats},
-    {"nativeResetStats", "()V", (void *)sohook_jni_reset_stats}};
+    {"nativeResetStats", "()V", (void *)sohook_jni_reset_stats},
+    {"nativeSetBacktraceEnabled", "(Z)V", (void *)sohook_jni_set_backtrace_enabled},
+    {"nativeIsBacktraceEnabled", "()Z", (void *)sohook_jni_is_backtrace_enabled}};
 
 // JNI_OnLoad
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {

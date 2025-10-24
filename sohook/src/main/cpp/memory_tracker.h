@@ -35,9 +35,10 @@ typedef struct memory_record {
 /**
  * 初始化内存追踪器
  * @param debug 是否开启调试模式
+ * @param enable_backtrace 是否启用栈回溯（会影响性能）
  * @return 0表示成功，其他值表示失败
  */
-int memory_tracker_init(bool debug);
+int memory_tracker_init(bool debug, bool enable_backtrace);
 
 /**
  * 开始追踪指定so库的内存分配
@@ -78,6 +79,19 @@ void memory_tracker_get_stats(memory_stats_t *stats);
  * 重置统计信息
  */
 void memory_tracker_reset_stats(void);
+
+/**
+ * 启用或禁用栈回溯
+ * @param enable true 启用，false 禁用
+ * 注意：启用栈回溯会显著影响性能（约 10-20x 慢）
+ */
+void memory_tracker_set_backtrace_enabled(bool enable);
+
+/**
+ * 检查栈回溯是否启用
+ * @return true 已启用，false 未启用
+ */
+bool memory_tracker_is_backtrace_enabled(void);
 
 /**
  * malloc的hook函数

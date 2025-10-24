@@ -34,7 +34,7 @@ public class SoHookTestActivity extends AppCompatActivity {
         tvStats = findViewById(R.id.tv_stats);
 
         // 初始化SoHook
-        int ret = SoHook.init(false);
+        int ret = SoHook.init(true, true);
         if (ret == 0) {
             Log.i(TAG, "SoHook初始化成功");
             showToast("SoHook初始化成功");
