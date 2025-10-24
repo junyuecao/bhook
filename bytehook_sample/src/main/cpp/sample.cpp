@@ -329,7 +329,7 @@ void sample_run_perf_tests(void) {
 
   // 测试3: 多线程测试
   PERF_LOGI("\n[Test 3] Multi-thread");
-  test_multithread(4, 500);
+  test_multithread(4, 2500);
 
   PERF_LOGI("\n╔════════════════════════════════════════╗");
   PERF_LOGI("║  Performance Test Completed            ║");

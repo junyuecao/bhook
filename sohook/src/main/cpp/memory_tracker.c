@@ -7,6 +7,7 @@
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,10 +25,17 @@
 // 全局状态
 static bool g_initialized = false;
 static bool g_debug = false;
-static pthread_mutex_t g_stats_mutex = PTHREAD_MUTEX_INITIALIZER;  // 统计专用锁
 
-// 内存统计
-static memory_stats_t g_stats = {0};
+// Hook 管理锁
+static pthread_mutex_t g_hook_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+// 混合统计策略：
+// - total_* 使用原子操作实时更新（用于性能测试）
+// - current_* 延迟计算（遍历哈希表）
+static _Atomic uint64_t g_total_alloc_count = 0;
+static _Atomic uint64_t g_total_alloc_size = 0;
+static _Atomic uint64_t g_total_free_count = 0;
+static _Atomic uint64_t g_total_free_size = 0;
 
 // bytehook stub数组
 #define MAX_HOOKS 64
@@ -82,13 +90,9 @@ static void add_memory_record(void *ptr, size_t size, const char *so_name) {
     return;
   }
 
-  // 更新全局统计（使用独立的统计锁）
-  pthread_mutex_lock(&g_stats_mutex);
-  g_stats.total_alloc_count++;
-  g_stats.total_alloc_size += size;
-  g_stats.current_alloc_count++;
-  g_stats.current_alloc_size += size;
-  pthread_mutex_unlock(&g_stats_mutex);
+  // 只更新 total 统计（原子操作，无锁）
+  atomic_fetch_add_explicit(&g_total_alloc_count, 1, memory_order_relaxed);
+  atomic_fetch_add_explicit(&g_total_alloc_size, size, memory_order_relaxed);
 
   // 在调用任何可能触发malloc的函数之前重置标志
   g_in_hook = false;
@@ -118,13 +122,9 @@ static void remove_memory_record(void *ptr) {
       free(record);
     }
 
-    // 更新全局统计（使用独立的统计锁）
-    pthread_mutex_lock(&g_stats_mutex);
-    g_stats.total_free_count++;
-    g_stats.total_free_size += freed_size;
-    g_stats.current_alloc_count--;
-    g_stats.current_alloc_size -= freed_size;
-    pthread_mutex_unlock(&g_stats_mutex);
+    // 只更新 total 统计（原子操作，无锁）
+    atomic_fetch_add_explicit(&g_total_free_count, 1, memory_order_relaxed);
+    atomic_fetch_add_explicit(&g_total_free_size, freed_size, memory_order_relaxed);
     
     // 在调用任何可能触发malloc的函数之前重置标志
     g_in_hook = false;
@@ -254,7 +254,7 @@ int memory_tracker_hook(const char **so_names, int count) {
     return -1;
   }
 
-  pthread_mutex_lock(&g_stats_mutex);
+  pthread_mutex_lock(&g_hook_mutex);
 
   for (int i = 0; i < count && g_hook_count < MAX_HOOKS; i++) {
     const char *so_name = so_names[i];
@@ -305,7 +305,7 @@ int memory_tracker_hook(const char **so_names, int count) {
     g_hook_count++;
   }
 
-  pthread_mutex_unlock(&g_stats_mutex);
+  pthread_mutex_unlock(&g_hook_mutex);
   LOGI("Hooked %d libraries", count);
   return 0;
 }
@@ -317,7 +317,7 @@ int memory_tracker_unhook(const char **so_names, int count) {
     return -1;
   }
 
-  pthread_mutex_lock(&g_stats_mutex);
+  pthread_mutex_lock(&g_hook_mutex);
 
   // 简化实现：unhook所有
   for (int i = 0; i < g_hook_count; i++) {
@@ -340,10 +340,32 @@ int memory_tracker_unhook(const char **so_names, int count) {
   }
 
   g_hook_count = 0;
-  pthread_mutex_unlock(&g_stats_mutex);
+  pthread_mutex_unlock(&g_hook_mutex);
 
   LOGI("Unhooked memory tracking");
   return 0;
+}
+
+// 用于计算当前统计的回调数据结构
+typedef struct {
+  uint64_t current_count;
+  uint64_t current_size;
+} stats_calc_context_t;
+
+// 统计计算回调函数
+static bool stats_calc_callback(memory_record_t *record, void *user_data) {
+  stats_calc_context_t *ctx = (stats_calc_context_t *)user_data;
+  ctx->current_count++;
+  ctx->current_size += record->size;
+  return true;  // 继续遍历
+}
+
+// 计算当前统计（遍历哈希表）
+static void calculate_current_stats(uint64_t *count, uint64_t *size) {
+  stats_calc_context_t ctx = {0};
+  hash_table_foreach(stats_calc_callback, &ctx);
+  *count = ctx.current_count;
+  *size = ctx.current_size;
 }
 
 // 用于遍历的回调数据结构
@@ -415,7 +437,15 @@ char *memory_tracker_get_leak_report(void) {
     return NULL;
   }
 
-  pthread_mutex_lock(&g_stats_mutex);
+  // 读取 total 统计（原子操作）
+  uint64_t total_alloc_count = atomic_load_explicit(&g_total_alloc_count, memory_order_relaxed);
+  uint64_t total_alloc_size = atomic_load_explicit(&g_total_alloc_size, memory_order_relaxed);
+  uint64_t total_free_count = atomic_load_explicit(&g_total_free_count, memory_order_relaxed);
+  uint64_t total_free_size = atomic_load_explicit(&g_total_free_size, memory_order_relaxed);
+  
+  // 计算 current 统计（遍历哈希表）
+  uint64_t current_count, current_size;
+  calculate_current_stats(&current_count, &current_size);
 
   int offset = 0;
   offset += snprintf(report + offset, buffer_size - offset,
@@ -423,14 +453,12 @@ char *memory_tracker_get_leak_report(void) {
                      "Total Allocations: %llu (%llu bytes)\n"
                      "Total Frees: %llu (%llu bytes)\n"
                      "Current Leaks: %llu (%llu bytes)\n\n",
-                     (unsigned long long)g_stats.total_alloc_count,
-                     (unsigned long long)g_stats.total_alloc_size,
-                     (unsigned long long)g_stats.total_free_count,
-                     (unsigned long long)g_stats.total_free_size,
-                     (unsigned long long)g_stats.current_alloc_count,
-                     (unsigned long long)g_stats.current_alloc_size);
-
-  pthread_mutex_unlock(&g_stats_mutex);
+                     (unsigned long long)total_alloc_count,
+                     (unsigned long long)total_alloc_size,
+                     (unsigned long long)total_free_count,
+                     (unsigned long long)total_free_size,
+                     (unsigned long long)current_count,
+                     (unsigned long long)current_size);
 
   // 使用哈希表遍历接口
   int leak_count = 0;
@@ -491,9 +519,14 @@ int memory_tracker_dump_leak_report(const char *file_path) {
 void memory_tracker_get_stats(memory_stats_t *stats) {
   if (stats == NULL) return;
 
-  pthread_mutex_lock(&g_stats_mutex);
-  memcpy(stats, &g_stats, sizeof(memory_stats_t));
-  pthread_mutex_unlock(&g_stats_mutex);
+  // 读取 total 统计（原子操作）
+  stats->total_alloc_count = atomic_load_explicit(&g_total_alloc_count, memory_order_relaxed);
+  stats->total_alloc_size = atomic_load_explicit(&g_total_alloc_size, memory_order_relaxed);
+  stats->total_free_count = atomic_load_explicit(&g_total_free_count, memory_order_relaxed);
+  stats->total_free_size = atomic_load_explicit(&g_total_free_size, memory_order_relaxed);
+  
+  // 计算 current 统计（遍历哈希表）
+  calculate_current_stats(&stats->current_alloc_count, &stats->current_alloc_size);
 }
 
 // 重置统计信息
@@ -504,10 +537,11 @@ void memory_tracker_reset_stats(void) {
   // 重新初始化哈希表
   hash_table_init();
 
-  // 重置统计
-  pthread_mutex_lock(&g_stats_mutex);
-  memset(&g_stats, 0, sizeof(memory_stats_t));
-  pthread_mutex_unlock(&g_stats_mutex);
+  // 重置原子统计
+  atomic_store_explicit(&g_total_alloc_count, 0, memory_order_relaxed);
+  atomic_store_explicit(&g_total_alloc_size, 0, memory_order_relaxed);
+  atomic_store_explicit(&g_total_free_count, 0, memory_order_relaxed);
+  atomic_store_explicit(&g_total_free_size, 0, memory_order_relaxed);
   
   LOGI("Memory stats reset");
 }
