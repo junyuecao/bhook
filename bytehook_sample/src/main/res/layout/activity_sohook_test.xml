@@ -104,7 +104,27 @@
 
             <TextView
                 style="@style/Theme.TextView.Title"
-                android:text="5. 其他操作" />
+                android:text="5. 性能测试" />
+
+            <Button
+                style="@style/Theme.Button"
+                android:id="@+id/btn_run_perf_tests"
+                android:onClick="onRunPerfTestsClick"
+                android:text="运行完整性能测试"
+                android:backgroundTint="#FF6B35"
+                tools:ignore="UsingOnClickInXml" />
+
+            <Button
+                style="@style/Theme.Button"
+                android:id="@+id/btn_quick_benchmark"
+                android:onClick="onQuickBenchmarkClick"
+                android:text="快速基准测试 (5000次)"
+                android:backgroundTint="#FF6B35"
+                tools:ignore="UsingOnClickInXml" />
+
+            <TextView
+                style="@style/Theme.TextView.Title"
+                android:text="6. 其他操作" />
 
             <Button
                 style="@style/Theme.Button"
@@ -116,7 +136,7 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="提示: 查看详细日志请使用\nadb logcat -s SoHookTest"
+                android:text="提示: 查看详细日志请使用\nadb logcat -s SamplePerf SoHookTest"
                 android:textSize="12sp"
                 android:textColor="#666666"
                 android:padding="12dp"

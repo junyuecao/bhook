@@ -28,6 +28,14 @@ public class NativeHacker {
     public static void freeAllMemory() {
         nativeFreeAllMemory();
     }
+    
+    public static void runPerfTests() {
+        nativeRunPerfTests();
+    }
+    
+    public static void quickBenchmark(int iterations) {
+        nativeQuickBenchmark(iterations);
+    }
 
     private static native int nativeBytehookHook();
     private static native int nativeBytehookUnhook();
@@ -39,4 +47,6 @@ public class NativeHacker {
     private static native void nativeAllocMemory(int count);
     private static native void nativeFreeMemory(int count);
     private static native void nativeFreeAllMemory();
+    private static native void nativeRunPerfTests();
+    private static native void nativeQuickBenchmark(int iterations);
 }

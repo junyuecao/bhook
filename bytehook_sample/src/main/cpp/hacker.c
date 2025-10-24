@@ -53,11 +53,15 @@ typedef void (*sample_test_strlen_t)(int);
 typedef void (*sample_alloc_memory_t)(int);
 typedef void (*sample_free_memory_t)(int);
 typedef void (*sample_free_all_memory_t)(void);
+typedef void (*sample_run_perf_tests_t)(void);
+typedef void (*sample_quick_benchmark_t)(int);
 
 static sample_test_strlen_t sample_test_strlen = NULL;
 static sample_alloc_memory_t sample_alloc_memory = NULL;
 static sample_free_memory_t sample_free_memory = NULL;
 static sample_free_all_memory_t sample_free_all_memory = NULL;
+static sample_run_perf_tests_t sample_run_perf_tests = NULL;
+static sample_quick_benchmark_t sample_quick_benchmark = NULL;
 
 static void hacker_jni_do_dlopen(JNIEnv *env, jobject thiz) {
   (void)env;
@@ -73,6 +77,8 @@ static void hacker_jni_do_dlopen(JNIEnv *env, jobject thiz) {
       sample_alloc_memory = (sample_alloc_memory_t)dlsym(libsample_handle, "sample_alloc_memory");
       sample_free_memory = (sample_free_memory_t)dlsym(libsample_handle, "sample_free_memory");
       sample_free_all_memory = (sample_free_all_memory_t)dlsym(libsample_handle, "sample_free_all_memory");
+      sample_run_perf_tests = (sample_run_perf_tests_t)dlsym(libsample_handle, "sample_run_perf_tests");
+      sample_quick_benchmark = (sample_quick_benchmark_t)dlsym(libsample_handle, "sample_quick_benchmark");
     }
   }
 }
@@ -105,6 +111,20 @@ static void hacker_jni_free_all_memory(JNIEnv *env, jobject thiz) {
   if (NULL != sample_free_all_memory) sample_free_all_memory();
 }
 
+static void hacker_jni_run_perf_tests(JNIEnv *env, jobject thiz) {
+  (void)env;
+  (void)thiz;
+
+  if (NULL != sample_run_perf_tests) sample_run_perf_tests();
+}
+
+static void hacker_jni_quick_benchmark(JNIEnv *env, jobject thiz, jint iterations) {
+  (void)env;
+  (void)thiz;
+
+  if (NULL != sample_quick_benchmark) sample_quick_benchmark(iterations);
+}
+
 static void hacker_jni_do_dlclose(JNIEnv *env, jobject thiz) {
   (void)env;
   (void)thiz;
@@ -117,6 +137,8 @@ static void hacker_jni_do_dlclose(JNIEnv *env, jobject thiz) {
     sample_alloc_memory = NULL;
     sample_free_memory = NULL;
     sample_free_all_memory = NULL;
+    sample_run_perf_tests = NULL;
+    sample_quick_benchmark = NULL;
     dlclose(libsample_handle);
     libsample_handle = NULL;
   }
@@ -131,7 +153,9 @@ static JNINativeMethod hacker_jni_methods[] = {
     {"nativeDoRun", "(I)V", (void *)hacker_jni_do_run},
     {"nativeAllocMemory", "(I)V", (void *)hacker_jni_alloc_memory},
     {"nativeFreeMemory", "(I)V", (void *)hacker_jni_free_memory},
-    {"nativeFreeAllMemory", "()V", (void *)hacker_jni_free_all_memory}};
+    {"nativeFreeAllMemory", "()V", (void *)hacker_jni_free_all_memory},
+    {"nativeRunPerfTests", "()V", (void *)hacker_jni_run_perf_tests},
+    {"nativeQuickBenchmark", "(I)V", (void *)hacker_jni_quick_benchmark}};
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
   JNIEnv *env;

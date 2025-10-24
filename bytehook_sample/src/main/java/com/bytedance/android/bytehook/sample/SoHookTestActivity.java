@@ -183,6 +183,46 @@ public class SoHookTestActivity extends AppCompatActivity {
         Log.i(TAG, "释放了5个内存块");
     }
 
+    public void onRunPerfTestsClick(View view) {
+        if (!isHooked) {
+            showToast("请先开始监控");
+            return;
+        }
+        
+        showToast("开始性能测试，请查看logcat");
+        Log.i(TAG, "=== 开始运行性能测试套件 ===");
+        
+        // 在后台线程运行，避免阻塞UI
+        new Thread(() -> {
+            // 调用 libsample.so 中的性能测试
+            NativeHacker.runPerfTests();
+            runOnUiThread(() -> {
+                showToast("性能测试完成，查看logcat和统计");
+                updateStats();
+            });
+        }).start();
+    }
+
+    public void onQuickBenchmarkClick(View view) {
+        if (!isHooked) {
+            showToast("请先开始监控");
+            return;
+        }
+        
+        showToast("开始快速基准测试，请查看logcat");
+        Log.i(TAG, "=== 开始快速基准测试 ===");
+        
+        // 在后台线程运行，避免阻塞UI
+        new Thread(() -> {
+            // 调用 libsample.so 中的快速基准测试
+            NativeHacker.quickBenchmark(5000);
+            runOnUiThread(() -> {
+                showToast("基准测试完成，查看logcat和统计");
+                updateStats();
+            });
+        }).start();
+    }
+
     private void updateStats() {
         SoHook.MemoryStats stats = SoHook.getMemoryStats();
         

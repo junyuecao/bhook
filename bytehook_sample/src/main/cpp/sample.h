@@ -11,6 +11,10 @@ void sample_alloc_memory(int count);
 void sample_free_memory(int count);
 void sample_free_all_memory(void);
 
+// 性能测试函数
+void sample_run_perf_tests(void);
+void sample_quick_benchmark(int iterations);
+
 #ifdef __cplusplus
 }
 #endif

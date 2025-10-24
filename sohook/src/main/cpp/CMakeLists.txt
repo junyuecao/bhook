@@ -30,6 +30,7 @@ target_link_libraries(sohook
     android
 )
 target_compile_options(sohook PUBLIC -Wno-unused-parameter)
+target_compile_options(sohook PUBLIC -Wno-implicit-int-float-conversion)
 
 # 设置输出目录
 set_target_properties(sohook PROPERTIES
