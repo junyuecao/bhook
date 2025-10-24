@@ -20,16 +20,26 @@
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
+// 哈希表配置
+#define HASH_TABLE_SIZE 10007  // 质数，减少冲突
+
+// 哈希桶结构（分段锁）
+typedef struct hash_bucket {
+  memory_record_t *head;
+  pthread_mutex_t lock;
+} hash_bucket_t;
+
 // 全局状态
 static bool g_initialized = false;
 static bool g_debug = false;
-static pthread_mutex_t g_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t g_stats_mutex = PTHREAD_MUTEX_INITIALIZER;  // 统计专用锁
 
 // 内存统计
 static memory_stats_t g_stats = {0};
 
-// 内存记录链表头
-static memory_record_t *g_records_head = NULL;
+// 哈希表（替代原来的单链表）
+static hash_bucket_t g_hash_table[HASH_TABLE_SIZE];
+static bool g_hash_table_initialized = false;
 
 // bytehook stub数组
 #define MAX_HOOKS 64
@@ -46,7 +56,54 @@ static __thread bool g_in_hook = false;
 static void *(*original_malloc)(size_t) = NULL;
 static void (*original_free)(void *) = NULL;
 
-// 添加内存记录
+// 哈希函数：将指针地址映射到桶索引
+static inline size_t hash_ptr(void *ptr) {
+  uintptr_t addr = (uintptr_t)ptr;
+  // 右移3位忽略8字节对齐，减少冲突
+  return (addr >> 3) % HASH_TABLE_SIZE;
+}
+
+// 初始化哈希表
+static void init_hash_table(void) {
+  if (g_hash_table_initialized) return;
+  
+  for (int i = 0; i < HASH_TABLE_SIZE; i++) {
+    g_hash_table[i].head = NULL;
+    pthread_mutex_init(&g_hash_table[i].lock, NULL);
+  }
+  
+  g_hash_table_initialized = true;
+  LOGI("Hash table initialized with %d buckets", HASH_TABLE_SIZE);
+}
+
+// 清理哈希表
+static void cleanup_hash_table(void) {
+  if (!g_hash_table_initialized) return;
+  
+  for (int i = 0; i < HASH_TABLE_SIZE; i++) {
+    hash_bucket_t *bucket = &g_hash_table[i];
+    pthread_mutex_lock(&bucket->lock);
+    
+    memory_record_t *curr = bucket->head;
+    while (curr != NULL) {
+      memory_record_t *next = curr->next;
+      if (original_free != NULL) {
+        original_free(curr);
+      } else {
+        free(curr);
+      }
+      curr = next;
+    }
+    
+    bucket->head = NULL;
+    pthread_mutex_unlock(&bucket->lock);
+    pthread_mutex_destroy(&bucket->lock);
+  }
+  
+  g_hash_table_initialized = false;
+}
+
+// 添加内存记录（哈希表版本）
 static void add_memory_record(void *ptr, size_t size, const char *so_name) {
   if (g_in_hook) return;
   
@@ -72,8 +129,12 @@ static void add_memory_record(void *ptr, size_t size, const char *so_name) {
   record->backtrace_size = 0;  // TODO: 实现backtrace获取
   record->next = NULL;
 
-  // 使用trylock避免死锁，如果获取锁失败就放弃记录
-  if (pthread_mutex_trylock(&g_mutex) != 0) {
+  // 计算哈希值，定位到具体的桶
+  size_t bucket_idx = hash_ptr(ptr);
+  hash_bucket_t *bucket = &g_hash_table[bucket_idx];
+
+  // 使用分段锁：只锁定当前桶
+  if (pthread_mutex_trylock(&bucket->lock) != 0) {
     // 无法获取锁，放弃记录这次分配
     if (original_free != NULL) {
       original_free(record);
@@ -84,53 +145,58 @@ static void add_memory_record(void *ptr, size_t size, const char *so_name) {
     return;
   }
   
-  record->next = g_records_head;
-  g_records_head = record;
+  // 插入到桶的链表头部 O(1)
+  record->next = bucket->head;
+  bucket->head = record;
+  pthread_mutex_unlock(&bucket->lock);
 
+  // 更新全局统计（使用独立的统计锁）
+  pthread_mutex_lock(&g_stats_mutex);
   g_stats.total_alloc_count++;
   g_stats.total_alloc_size += size;
   g_stats.current_alloc_count++;
   g_stats.current_alloc_size += size;
-  pthread_mutex_unlock(&g_mutex);
+  pthread_mutex_unlock(&g_stats_mutex);
 
   // 在调用任何可能触发malloc的函数之前重置标志
   g_in_hook = false;
 
   if (g_debug) {
-    LOGD("malloc: ptr=%p, size=%zu, so=%s", ptr, size, so_name ? so_name : "unknown");
+    LOGD("malloc: ptr=%p, size=%zu, bucket=%zu, so=%s", ptr, size, bucket_idx, so_name ? so_name : "unknown");
   }
 }
 
-// 移除内存记录
+// 移除内存记录（哈希表版本 - O(1) 平均复杂度）
 static void remove_memory_record(void *ptr) {
   if (g_in_hook || ptr == NULL) return;
   
   g_in_hook = true;
 
-  // 使用trylock避免死锁
-  if (pthread_mutex_trylock(&g_mutex) != 0) {
+  // 计算哈希值，直接定位到桶 O(1)
+  size_t bucket_idx = hash_ptr(ptr);
+  hash_bucket_t *bucket = &g_hash_table[bucket_idx];
+
+  // 使用trylock避免死锁，只锁定当前桶
+  if (pthread_mutex_trylock(&bucket->lock) != 0) {
     // 无法获取锁，放弃记录这次释放
     g_in_hook = false;
     return;
   }
   
   memory_record_t *prev = NULL;
-  memory_record_t *curr = g_records_head;
+  memory_record_t *curr = bucket->head;
 
+  // 在桶内查找 O(1) 平均（桶内元素很少）
   while (curr != NULL) {
     if (curr->ptr == ptr) {
+      // 找到了，从链表中移除
       if (prev == NULL) {
-        g_records_head = curr->next;
+        bucket->head = curr->next;
       } else {
         prev->next = curr->next;
       }
 
-      g_stats.total_free_count++;
-      g_stats.total_free_size += curr->size;
-      g_stats.current_alloc_count--;
-      g_stats.current_alloc_size -= curr->size;
-
-      // 保存size用于日志
+      // 保存size用于统计和日志
       size_t freed_size = curr->size;
 
       // 使用原始free避免递归
@@ -140,13 +206,21 @@ static void remove_memory_record(void *ptr) {
         free(curr);
       }
       
-      pthread_mutex_unlock(&g_mutex);
+      pthread_mutex_unlock(&bucket->lock);
+
+      // 更新全局统计（使用独立的统计锁）
+      pthread_mutex_lock(&g_stats_mutex);
+      g_stats.total_free_count++;
+      g_stats.total_free_size += freed_size;
+      g_stats.current_alloc_count--;
+      g_stats.current_alloc_size -= freed_size;
+      pthread_mutex_unlock(&g_stats_mutex);
       
       // 在调用任何可能触发malloc的函数之前重置标志
       g_in_hook = false;
 
       if (g_debug) {
-        LOGD("free: ptr=%p, size=%zu", ptr, freed_size);
+        LOGD("free: ptr=%p, size=%zu, bucket=%zu", ptr, freed_size, bucket_idx);
       }
       return;
     }
@@ -154,7 +228,8 @@ static void remove_memory_record(void *ptr) {
     curr = curr->next;
   }
 
-  pthread_mutex_unlock(&g_mutex);
+  // 未找到记录（可能是未被追踪的内存）
+  pthread_mutex_unlock(&bucket->lock);
   g_in_hook = false;
 }
 
@@ -227,10 +302,14 @@ int memory_tracker_init(bool debug) {
     return -1;
   }
 
+  // 初始化哈希表
+  init_hash_table();
+
   // 初始化bytehook
   int ret = bytehook_init(BYTEHOOK_MODE_AUTOMATIC, debug);
   if (ret != BYTEHOOK_STATUS_CODE_OK) {
     LOGE("bytehook_init failed: %d", ret);
+    cleanup_hash_table();
     return ret;
   }
 
@@ -266,7 +345,7 @@ int memory_tracker_hook(const char **so_names, int count) {
     return -1;
   }
 
-  pthread_mutex_lock(&g_mutex);
+  pthread_mutex_lock(&g_stats_mutex);
 
   for (int i = 0; i < count && g_hook_count < MAX_HOOKS; i++) {
     const char *so_name = so_names[i];
@@ -317,7 +396,7 @@ int memory_tracker_hook(const char **so_names, int count) {
     g_hook_count++;
   }
 
-  pthread_mutex_unlock(&g_mutex);
+  pthread_mutex_unlock(&g_stats_mutex);
   LOGI("Hooked %d libraries", count);
   return 0;
 }
@@ -329,7 +408,7 @@ int memory_tracker_unhook(const char **so_names, int count) {
     return -1;
   }
 
-  pthread_mutex_lock(&g_mutex);
+  pthread_mutex_lock(&g_stats_mutex);
 
   // 简化实现：unhook所有
   for (int i = 0; i < g_hook_count; i++) {
@@ -352,7 +431,7 @@ int memory_tracker_unhook(const char **so_names, int count) {
   }
 
   g_hook_count = 0;
-  pthread_mutex_unlock(&g_mutex);
+  pthread_mutex_unlock(&g_stats_mutex);
 
   LOGI("Unhooked memory tracking");
   return 0;
@@ -377,7 +456,7 @@ char *memory_tracker_get_leak_report(void) {
     return NULL;
   }
 
-  pthread_mutex_lock(&g_mutex);
+  pthread_mutex_lock(&g_stats_mutex);
 
   int offset = 0;
   offset += snprintf(report + offset, buffer_size - offset,
@@ -392,10 +471,18 @@ char *memory_tracker_get_leak_report(void) {
                      (unsigned long long)g_stats.current_alloc_count,
                      (unsigned long long)g_stats.current_alloc_size);
 
+  pthread_mutex_unlock(&g_stats_mutex);
+
   // 列出所有未释放的内存（最多100个）
   int leak_count = 0;
-  memory_record_t *curr = g_records_head;
-  while (curr != NULL && leak_count < 100) {
+  
+  // 遍历所有哈希桶
+  for (int i = 0; i < HASH_TABLE_SIZE && leak_count < 100; i++) {
+    hash_bucket_t *bucket = &g_hash_table[i];
+    pthread_mutex_lock(&bucket->lock);
+    
+    memory_record_t *curr = bucket->head;
+    while (curr != NULL && leak_count < 100) {
     int needed = snprintf(NULL, 0, "Leak #%d: ptr=%p, size=%zu, so=%s\n",
                          leak_count + 1, curr->ptr, curr->size,
                          curr->so_name ? curr->so_name : "unknown");
@@ -422,14 +509,16 @@ char *memory_tracker_get_leak_report(void) {
       buffer_size = new_size;
     }
     
-    offset += snprintf(report + offset, buffer_size - offset, "Leak #%d: ptr=%p, size=%zu, so=%s\n",
-                       leak_count + 1, curr->ptr, curr->size,
-                       curr->so_name ? curr->so_name : "unknown");
-    curr = curr->next;
-    leak_count++;
+      offset += snprintf(report + offset, buffer_size - offset, "Leak #%d: ptr=%p, size=%zu, so=%s\n",
+                         leak_count + 1, curr->ptr, curr->size,
+                         curr->so_name ? curr->so_name : "unknown");
+      curr = curr->next;
+      leak_count++;
+    }
+    
+    pthread_mutex_unlock(&bucket->lock);
   }
 
-  pthread_mutex_unlock(&g_mutex);
   return report;
 }
 
@@ -477,32 +566,38 @@ int memory_tracker_dump_leak_report(const char *file_path) {
 void memory_tracker_get_stats(memory_stats_t *stats) {
   if (stats == NULL) return;
 
-  pthread_mutex_lock(&g_mutex);
+  pthread_mutex_lock(&g_stats_mutex);
   memcpy(stats, &g_stats, sizeof(memory_stats_t));
-  pthread_mutex_unlock(&g_mutex);
+  pthread_mutex_unlock(&g_stats_mutex);
 }
 
 // 重置统计信息
 void memory_tracker_reset_stats(void) {
-  pthread_mutex_lock(&g_mutex);
-
-  // 清空所有记录
-  memory_record_t *curr = g_records_head;
-  while (curr != NULL) {
-    memory_record_t *next = curr->next;
-    // 使用原始free避免递归
-    if (original_free != NULL) {
-      original_free(curr);
-    } else {
-      free(curr);
+  // 清空所有哈希桶中的记录
+  for (int i = 0; i < HASH_TABLE_SIZE; i++) {
+    hash_bucket_t *bucket = &g_hash_table[i];
+    pthread_mutex_lock(&bucket->lock);
+    
+    memory_record_t *curr = bucket->head;
+    while (curr != NULL) {
+      memory_record_t *next = curr->next;
+      // 使用原始free避免递归
+      if (original_free != NULL) {
+        original_free(curr);
+      } else {
+        free(curr);
+      }
+      curr = next;
     }
-    curr = next;
+    bucket->head = NULL;
+    
+    pthread_mutex_unlock(&bucket->lock);
   }
-  g_records_head = NULL;
 
   // 重置统计
+  pthread_mutex_lock(&g_stats_mutex);
   memset(&g_stats, 0, sizeof(memory_stats_t));
-
-  pthread_mutex_unlock(&g_mutex);
+  pthread_mutex_unlock(&g_stats_mutex);
+  
   LOGI("Memory stats reset");
 }
