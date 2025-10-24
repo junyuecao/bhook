@@ -421,16 +421,22 @@ static bool leak_report_callback(memory_record_t *record, void *user_data) {
   if (record->backtrace_size > 0) {
     backtrace_needed = snprintf(NULL, 0, "  Backtrace (%d frames):\n", record->backtrace_size);
     for (int i = 0; i < record->backtrace_size; i++) {
-      backtrace_needed += snprintf(NULL, 0, "    #%d: %p\n", i, record->backtrace[i]);
+      // 计算符号解析后的长度（符号名最长256，库名最长256，加上格式化字符）
+      // 格式: "    #%d: %p %s+%td (%s)\n"
+      backtrace_needed += 512;  // 预留足够空间
     }
   }
   
   int needed = base_needed + backtrace_needed;
   
   // 检查缓冲区是否足够
-  if (*ctx->buffer_size - *ctx->offset < (size_t)needed + 1) {
-    // 需要扩展缓冲区
+  if ((size_t)*ctx->offset >= *ctx->buffer_size || *ctx->buffer_size - *ctx->offset < (size_t)needed + 1) {
+    // 需要扩展缓冲区，确保新大小足够
     size_t new_size = *ctx->buffer_size * 2;
+    while (new_size - *ctx->offset < (size_t)needed + 1) {
+      new_size *= 2;
+    }
+    
     char *new_report = NULL;
     if (original_malloc != NULL) {
       new_report = (char *)original_malloc(new_size);
@@ -441,6 +447,7 @@ static bool leak_report_callback(memory_record_t *record, void *user_data) {
     }
     
     if (new_report == NULL) {
+      LOGE("Failed to expand report buffer");
       return false;  // 扩展失败，停止遍历
     }
     
@@ -459,6 +466,12 @@ static bool leak_report_callback(memory_record_t *record, void *user_data) {
     *ctx->offset += snprintf(*ctx->report + *ctx->offset, *ctx->buffer_size - *ctx->offset,
                             "  Backtrace (%d frames):\n", record->backtrace_size);
     for (int i = 0; i < record->backtrace_size; i++) {
+      // 确保有足够空间
+      if ((size_t)*ctx->offset >= *ctx->buffer_size - 512) {
+        LOGW("Buffer nearly full, stopping backtrace output");
+        break;
+      }
+      
       // 尝试解析符号
       Dl_info info;
       if (dladdr(record->backtrace[i], &info) && info.dli_sname) {
@@ -466,17 +479,31 @@ static bool leak_report_callback(memory_record_t *record, void *user_data) {
         const char *symbol = info.dli_sname;
         const char *lib = info.dli_fname ? strrchr(info.dli_fname, '/') : NULL;
         lib = lib ? lib + 1 : info.dli_fname;
-        
+
         // 计算偏移
         ptrdiff_t offset = (char *)record->backtrace[i] - (char *)info.dli_saddr;
         
-        *ctx->offset += snprintf(*ctx->report + *ctx->offset, *ctx->buffer_size - *ctx->offset,
-                                "    #%d: %p %s+%td (%s)\n", 
-                                i, record->backtrace[i], symbol, offset, lib ? lib : "?");
+        size_t remaining = *ctx->buffer_size - *ctx->offset;
+        int written = snprintf(*ctx->report + *ctx->offset, remaining,
+                              "    #%d: %p %s+%td (%s)\n", 
+                              i, record->backtrace[i], symbol, offset, lib ? lib : "?");
+        if (written > 0 && (size_t)written < remaining) {
+          *ctx->offset += written;
+        } else {
+          LOGW("Buffer overflow prevented at frame %d", i);
+          break;
+        }
       } else {
         // 无法解析，只显示地址
-        *ctx->offset += snprintf(*ctx->report + *ctx->offset, *ctx->buffer_size - *ctx->offset,
-                                "    #%d: %p\n", i, record->backtrace[i]);
+        size_t remaining = *ctx->buffer_size - *ctx->offset;
+        int written = snprintf(*ctx->report + *ctx->offset, remaining,
+                              "    #%d: %p\n", i, record->backtrace[i]);
+        if (written > 0 && (size_t)written < remaining) {
+          *ctx->offset += written;
+        } else {
+          LOGW("Buffer overflow prevented at frame %d", i);
+          break;
+        }
       }
     }
   } else {
