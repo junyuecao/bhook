@@ -79,7 +79,7 @@ static int capture_backtrace(void **buffer, int max_frames) {
 }
 
 // 添加内存记录（哈希表版本）
-static void add_memory_record(void *ptr, size_t size, const char *so_name) {
+static void add_memory_record(void *ptr, size_t size) {
   if (g_in_hook) return;
   
   // 设置标志，防止递归
@@ -94,7 +94,6 @@ static void add_memory_record(void *ptr, size_t size, const char *so_name) {
 
   record->ptr = ptr;
   record->size = size;
-  record->so_name = so_name;
   record->next = NULL;
   
   // 可选的栈回溯（如果启用）
@@ -123,7 +122,7 @@ static void add_memory_record(void *ptr, size_t size, const char *so_name) {
   g_in_hook = false;
 
   if (g_debug) {
-    LOGD("malloc: ptr=%p, size=%zu, so=%s", ptr, size, so_name ? so_name : "unknown");
+    LOGD("malloc: ptr=%p, size=%zu", ptr, size);
   }
 }
 
@@ -169,7 +168,7 @@ void *malloc_proxy(size_t size) {
   void *result = BYTEHOOK_CALL_PREV(malloc_proxy, void *(*)(size_t), size);
   
   if (result != NULL && !g_in_hook) {
-    add_memory_record(result, size, "tracked");
+    add_memory_record(result, size);
   }
   
   BYTEHOOK_POP_STACK();
@@ -180,7 +179,7 @@ void *malloc_proxy(size_t size) {
 void *calloc_proxy(size_t nmemb, size_t size) {
   void *result = BYTEHOOK_CALL_PREV(calloc_proxy, void *(*)(size_t, size_t), nmemb, size);
   if (result != NULL && !g_in_hook) {
-    add_memory_record(result, nmemb * size, "tracked");
+    add_memory_record(result, nmemb * size);
   }
   BYTEHOOK_POP_STACK();
   return result;
@@ -195,7 +194,7 @@ void *realloc_proxy(void *ptr, size_t size) {
   void *result = BYTEHOOK_CALL_PREV(realloc_proxy, void *(*)(void *, size_t), ptr, size);
 
   if (result != NULL && !g_in_hook) {
-    add_memory_record(result, size, "tracked");
+    add_memory_record(result, size);
   }
 
   BYTEHOOK_POP_STACK();
@@ -415,9 +414,8 @@ static bool leak_report_callback(memory_record_t *record, void *user_data) {
   }
   
   // 计算需要的空间（包括栈回溯）
-  int base_needed = snprintf(NULL, 0, "Leak #%d: ptr=%p, size=%zu, so=%s\n",
-                            *ctx->leak_count + 1, record->ptr, record->size,
-                            record->so_name ? record->so_name : "unknown");
+  int base_needed = snprintf(NULL, 0, "Leak #%d: ptr=%p, size=%zu\n",
+                            *ctx->leak_count + 1, record->ptr, record->size);
   
   int backtrace_needed = 0;
   if (record->backtrace_size > 0) {
@@ -452,9 +450,8 @@ static bool leak_report_callback(memory_record_t *record, void *user_data) {
   
   // 写入基本信息
   *ctx->offset += snprintf(*ctx->report + *ctx->offset, *ctx->buffer_size - *ctx->offset,
-                          "Leak #%d: ptr=%p, size=%zu, so=%s\n",
-                          *ctx->leak_count + 1, record->ptr, record->size,
-                          record->so_name ? record->so_name : "unknown");
+                          "Leak #%d: ptr=%p, size=%zu\n",
+                          *ctx->leak_count + 1, record->ptr, record->size);
   
   // 写入栈回溯信息（如果有）
   if (record->backtrace_size > 0) {

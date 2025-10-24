@@ -26,10 +26,9 @@ typedef struct {
 typedef struct memory_record {
   void *ptr;                     // 分配的内存地址
   size_t size;                   // 分配的大小
-  void *backtrace[16];           // 调用栈
+  void *backtrace[16];           // 调用栈（最多16帧）
   int backtrace_size;            // 调用栈深度
-  const char *so_name;           // 所属的so库名称
-  struct memory_record *next;    // 链表下一个节点
+  struct memory_record *next;    // 链表下一个节点（用于哈希表冲突链）
 } memory_record_t;
 
 /**
