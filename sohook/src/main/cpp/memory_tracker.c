@@ -13,21 +13,13 @@
 #include <unistd.h>
 
 #include "bytehook.h"
+#include "memory_hash_table.h"
 
 #define LOG_TAG "MemoryTracker"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
-
-// 哈希表配置
-#define HASH_TABLE_SIZE 10007  // 质数，减少冲突
-
-// 哈希桶结构（分段锁）
-typedef struct hash_bucket {
-  memory_record_t *head;
-  pthread_mutex_t lock;
-} hash_bucket_t;
 
 // 全局状态
 static bool g_initialized = false;
@@ -36,10 +28,6 @@ static pthread_mutex_t g_stats_mutex = PTHREAD_MUTEX_INITIALIZER;  // 统计专�
 
 // 内存统计
 static memory_stats_t g_stats = {0};
-
-// 哈希表（替代原来的单链表）
-static hash_bucket_t g_hash_table[HASH_TABLE_SIZE];
-static bool g_hash_table_initialized = false;
 
 // bytehook stub数组
 #define MAX_HOOKS 64
@@ -55,53 +43,6 @@ static __thread bool g_in_hook = false;
 // 原始的malloc/free函数指针（用于内部分配，避免递归）
 static void *(*original_malloc)(size_t) = NULL;
 static void (*original_free)(void *) = NULL;
-
-// 哈希函数：将指针地址映射到桶索引
-static inline size_t hash_ptr(void *ptr) {
-  uintptr_t addr = (uintptr_t)ptr;
-  // 右移3位忽略8字节对齐，减少冲突
-  return (addr >> 3) % HASH_TABLE_SIZE;
-}
-
-// 初始化哈希表
-static void init_hash_table(void) {
-  if (g_hash_table_initialized) return;
-  
-  for (int i = 0; i < HASH_TABLE_SIZE; i++) {
-    g_hash_table[i].head = NULL;
-    pthread_mutex_init(&g_hash_table[i].lock, NULL);
-  }
-  
-  g_hash_table_initialized = true;
-  LOGI("Hash table initialized with %d buckets", HASH_TABLE_SIZE);
-}
-
-// 清理哈希表
-static void cleanup_hash_table(void) {
-  if (!g_hash_table_initialized) return;
-  
-  for (int i = 0; i < HASH_TABLE_SIZE; i++) {
-    hash_bucket_t *bucket = &g_hash_table[i];
-    pthread_mutex_lock(&bucket->lock);
-    
-    memory_record_t *curr = bucket->head;
-    while (curr != NULL) {
-      memory_record_t *next = curr->next;
-      if (original_free != NULL) {
-        original_free(curr);
-      } else {
-        free(curr);
-      }
-      curr = next;
-    }
-    
-    bucket->head = NULL;
-    pthread_mutex_unlock(&bucket->lock);
-    pthread_mutex_destroy(&bucket->lock);
-  }
-  
-  g_hash_table_initialized = false;
-}
 
 // 添加内存记录（哈希表版本）
 static void add_memory_record(void *ptr, size_t size, const char *so_name) {
@@ -129,13 +70,9 @@ static void add_memory_record(void *ptr, size_t size, const char *so_name) {
   record->backtrace_size = 0;  // TODO: 实现backtrace获取
   record->next = NULL;
 
-  // 计算哈希值，定位到具体的桶
-  size_t bucket_idx = hash_ptr(ptr);
-  hash_bucket_t *bucket = &g_hash_table[bucket_idx];
-
-  // 使用分段锁：只锁定当前桶
-  if (pthread_mutex_trylock(&bucket->lock) != 0) {
-    // 无法获取锁，放弃记录这次分配
+  // 使用哈希表添加记录
+  if (hash_table_add(record) != 0) {
+    // 添加失败，释放记录
     if (original_free != NULL) {
       original_free(record);
     } else {
@@ -144,11 +81,6 @@ static void add_memory_record(void *ptr, size_t size, const char *so_name) {
     g_in_hook = false;
     return;
   }
-  
-  // 插入到桶的链表头部 O(1)
-  record->next = bucket->head;
-  bucket->head = record;
-  pthread_mutex_unlock(&bucket->lock);
 
   // 更新全局统计（使用独立的统计锁）
   pthread_mutex_lock(&g_stats_mutex);
@@ -162,7 +94,7 @@ static void add_memory_record(void *ptr, size_t size, const char *so_name) {
   g_in_hook = false;
 
   if (g_debug) {
-    LOGD("malloc: ptr=%p, size=%zu, bucket=%zu, so=%s", ptr, size, bucket_idx, so_name ? so_name : "unknown");
+    LOGD("malloc: ptr=%p, size=%zu, so=%s", ptr, size, so_name ? so_name : "unknown");
   }
 }
 
@@ -172,64 +104,38 @@ static void remove_memory_record(void *ptr) {
   
   g_in_hook = true;
 
-  // 计算哈希值，直接定位到桶 O(1)
-  size_t bucket_idx = hash_ptr(ptr);
-  hash_bucket_t *bucket = &g_hash_table[bucket_idx];
-
-  // 使用trylock避免死锁，只锁定当前桶
-  if (pthread_mutex_trylock(&bucket->lock) != 0) {
-    // 无法获取锁，放弃记录这次释放
-    g_in_hook = false;
-    return;
-  }
+  // 使用哈希表移除记录
+  memory_record_t *record = hash_table_remove(ptr);
   
-  memory_record_t *prev = NULL;
-  memory_record_t *curr = bucket->head;
+  if (record != NULL) {
+    // 找到了记录
+    size_t freed_size = record->size;
 
-  // 在桶内查找 O(1) 平均（桶内元素很少）
-  while (curr != NULL) {
-    if (curr->ptr == ptr) {
-      // 找到了，从链表中移除
-      if (prev == NULL) {
-        bucket->head = curr->next;
-      } else {
-        prev->next = curr->next;
-      }
-
-      // 保存size用于统计和日志
-      size_t freed_size = curr->size;
-
-      // 使用原始free避免递归
-      if (original_free != NULL) {
-        original_free(curr);
-      } else {
-        free(curr);
-      }
-      
-      pthread_mutex_unlock(&bucket->lock);
-
-      // 更新全局统计（使用独立的统计锁）
-      pthread_mutex_lock(&g_stats_mutex);
-      g_stats.total_free_count++;
-      g_stats.total_free_size += freed_size;
-      g_stats.current_alloc_count--;
-      g_stats.current_alloc_size -= freed_size;
-      pthread_mutex_unlock(&g_stats_mutex);
-      
-      // 在调用任何可能触发malloc的函数之前重置标志
-      g_in_hook = false;
-
-      if (g_debug) {
-        LOGD("free: ptr=%p, size=%zu, bucket=%zu", ptr, freed_size, bucket_idx);
-      }
-      return;
+    // 使用原始free避免递归
+    if (original_free != NULL) {
+      original_free(record);
+    } else {
+      free(record);
     }
-    prev = curr;
-    curr = curr->next;
+
+    // 更新全局统计（使用独立的统计锁）
+    pthread_mutex_lock(&g_stats_mutex);
+    g_stats.total_free_count++;
+    g_stats.total_free_size += freed_size;
+    g_stats.current_alloc_count--;
+    g_stats.current_alloc_size -= freed_size;
+    pthread_mutex_unlock(&g_stats_mutex);
+    
+    // 在调用任何可能触发malloc的函数之前重置标志
+    g_in_hook = false;
+
+    if (g_debug) {
+      LOGD("free: ptr=%p, size=%zu", ptr, freed_size);
+    }
+    return;
   }
 
   // 未找到记录（可能是未被追踪的内存）
-  pthread_mutex_unlock(&bucket->lock);
   g_in_hook = false;
 }
 
@@ -303,13 +209,16 @@ int memory_tracker_init(bool debug) {
   }
 
   // 初始化哈希表
-  init_hash_table();
+  if (hash_table_init() != 0) {
+    LOGE("Hash table init failed");
+    return -1;
+  }
 
   // 初始化bytehook
   int ret = bytehook_init(BYTEHOOK_MODE_AUTOMATIC, debug);
   if (ret != BYTEHOOK_STATUS_CODE_OK) {
     LOGE("bytehook_init failed: %d", ret);
-    cleanup_hash_table();
+    hash_table_cleanup(original_free != NULL ? original_free : free);
     return ret;
   }
 
@@ -437,13 +346,63 @@ int memory_tracker_unhook(const char **so_names, int count) {
   return 0;
 }
 
+// 用于遍历的回调数据结构
+typedef struct {
+  char **report;
+  size_t *buffer_size;
+  int *offset;
+  int *leak_count;
+  int max_leaks;
+} leak_report_context_t;
+
+// 遍历回调函数
+static bool leak_report_callback(memory_record_t *record, void *user_data) {
+  leak_report_context_t *ctx = (leak_report_context_t *)user_data;
+  
+  if (*ctx->leak_count >= ctx->max_leaks) {
+    return false;  // 停止遍历
+  }
+  
+  int needed = snprintf(NULL, 0, "Leak #%d: ptr=%p, size=%zu, so=%s\n",
+                       *ctx->leak_count + 1, record->ptr, record->size,
+                       record->so_name ? record->so_name : "unknown");
+  
+  // 检查缓冲区是否足够
+  if (*ctx->buffer_size - *ctx->offset < (size_t)needed + 1) {
+    // 需要扩展缓冲区
+    size_t new_size = *ctx->buffer_size * 2;
+    char *new_report = NULL;
+    if (original_malloc != NULL) {
+      new_report = (char *)original_malloc(new_size);
+      if (new_report != NULL) {
+        memcpy(new_report, *ctx->report, *ctx->offset);
+        original_free(*ctx->report);
+      }
+    }
+    
+    if (new_report == NULL) {
+      return false;  // 扩展失败，停止遍历
+    }
+    
+    *ctx->report = new_report;
+    *ctx->buffer_size = new_size;
+  }
+  
+  *ctx->offset += snprintf(*ctx->report + *ctx->offset, *ctx->buffer_size - *ctx->offset,
+                          "Leak #%d: ptr=%p, size=%zu, so=%s\n",
+                          *ctx->leak_count + 1, record->ptr, record->size,
+                          record->so_name ? record->so_name : "unknown");
+  (*ctx->leak_count)++;
+  return true;  // 继续遍历
+}
+
 // 获取内存泄漏报告
 char *memory_tracker_get_leak_report(void) {
   if (!g_initialized) {
     return strdup("Memory tracker not initialized");
   }
 
-  // 先分配缓冲区，避免在持有锁时调用malloc
+  // 先分配缓冲区
   size_t buffer_size = 4096;
   char *report = NULL;
   if (original_malloc != NULL) {
@@ -473,51 +432,17 @@ char *memory_tracker_get_leak_report(void) {
 
   pthread_mutex_unlock(&g_stats_mutex);
 
-  // 列出所有未释放的内存（最多100个）
+  // 使用哈希表遍历接口
   int leak_count = 0;
+  leak_report_context_t ctx = {
+    .report = &report,
+    .buffer_size = &buffer_size,
+    .offset = &offset,
+    .leak_count = &leak_count,
+    .max_leaks = 100
+  };
   
-  // 遍历所有哈希桶
-  for (int i = 0; i < HASH_TABLE_SIZE && leak_count < 100; i++) {
-    hash_bucket_t *bucket = &g_hash_table[i];
-    pthread_mutex_lock(&bucket->lock);
-    
-    memory_record_t *curr = bucket->head;
-    while (curr != NULL && leak_count < 100) {
-    int needed = snprintf(NULL, 0, "Leak #%d: ptr=%p, size=%zu, so=%s\n",
-                         leak_count + 1, curr->ptr, curr->size,
-                         curr->so_name ? curr->so_name : "unknown");
-    
-    // 检查缓冲区是否足够
-    if (buffer_size - offset < (size_t)needed + 1) {
-      // 需要扩展缓冲区
-      size_t new_size = buffer_size * 2;
-      char *new_report = NULL;
-      if (original_malloc != NULL) {
-        new_report = (char *)original_malloc(new_size);
-        if (new_report != NULL) {
-          memcpy(new_report, report, offset);
-          original_free(report);
-        }
-      }
-      
-      if (new_report == NULL) {
-        // 扩展失败，停止添加更多泄漏信息
-        break;
-      }
-      
-      report = new_report;
-      buffer_size = new_size;
-    }
-    
-      offset += snprintf(report + offset, buffer_size - offset, "Leak #%d: ptr=%p, size=%zu, so=%s\n",
-                         leak_count + 1, curr->ptr, curr->size,
-                         curr->so_name ? curr->so_name : "unknown");
-      curr = curr->next;
-      leak_count++;
-    }
-    
-    pthread_mutex_unlock(&bucket->lock);
-  }
+  hash_table_foreach(leak_report_callback, &ctx);
 
   return report;
 }
@@ -573,26 +498,11 @@ void memory_tracker_get_stats(memory_stats_t *stats) {
 
 // 重置统计信息
 void memory_tracker_reset_stats(void) {
-  // 清空所有哈希桶中的记录
-  for (int i = 0; i < HASH_TABLE_SIZE; i++) {
-    hash_bucket_t *bucket = &g_hash_table[i];
-    pthread_mutex_lock(&bucket->lock);
-    
-    memory_record_t *curr = bucket->head;
-    while (curr != NULL) {
-      memory_record_t *next = curr->next;
-      // 使用原始free避免递归
-      if (original_free != NULL) {
-        original_free(curr);
-      } else {
-        free(curr);
-      }
-      curr = next;
-    }
-    bucket->head = NULL;
-    
-    pthread_mutex_unlock(&bucket->lock);
-  }
+  // 清空哈希表中的所有记录
+  hash_table_cleanup(original_free != NULL ? original_free : free);
+  
+  // 重新初始化哈希表
+  hash_table_init();
 
   // 重置统计
   pthread_mutex_lock(&g_stats_mutex);

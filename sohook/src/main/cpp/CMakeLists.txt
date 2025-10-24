@@ -16,6 +16,7 @@ find_package(bytehook REQUIRED CONFIG)
 add_library(sohook SHARED
     sohook_jni.c
     memory_tracker.c
+    memory_hash_table.c
 )
 
 # 包含头文件目录
