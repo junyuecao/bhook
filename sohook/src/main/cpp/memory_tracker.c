@@ -12,11 +12,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <unwind.h>
 
 #include "bytehook.h"
 #include "memory_hash_table.h"
 #include "memory_pool.h"
+#include "leak_report.h"
+#include "memory_stats.h"
+#include "backtrace.h"
 
 #define LOG_TAG "MemoryTracker"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
@@ -32,14 +34,6 @@ static bool g_backtrace_enabled = false;
 // Hook 管理锁
 static pthread_mutex_t g_hook_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-// 混合统计策略：
-// - total_* 使用原子操作实时更新（用于性能测试）
-// - current_* 延迟计算（遍历哈希表）
-static _Atomic uint64_t g_total_alloc_count = 0;
-static _Atomic uint64_t g_total_alloc_size = 0;
-static _Atomic uint64_t g_total_free_count = 0;
-static _Atomic uint64_t g_total_free_size = 0;
-
 // bytehook stub数组
 #define MAX_HOOKS 64
 static bytehook_stub_t g_malloc_stubs[MAX_HOOKS];
@@ -54,29 +48,6 @@ static __thread bool g_in_hook = false;
 // 原始函数指针
 static void *(*original_malloc)(size_t) = NULL;
 static void (*original_free)(void *) = NULL;
-
-// 栈回溯辅助结构
-struct BacktraceState {
-  void **current;
-  void **end;
-};
-
-// 栈回溯回调
-static _Unwind_Reason_Code unwind_callback(struct _Unwind_Context *context, void *arg) {
-  struct BacktraceState *state = (struct BacktraceState *)arg;
-  uintptr_t pc = _Unwind_GetIP(context);
-  if (pc && state->current < state->end) {
-    *state->current++ = (void *)pc;
-  }
-  return state->current < state->end ? _URC_NO_REASON : _URC_END_OF_STACK;
-}
-
-// 捕获当前调用栈
-static int capture_backtrace(void **buffer, int max_frames) {
-  struct BacktraceState state = {buffer, buffer + max_frames};
-  _Unwind_Backtrace(unwind_callback, &state);
-  return state.current - buffer;
-}
 
 // 添加内存记录（哈希表版本）
 static void add_memory_record(void *ptr, size_t size) {
@@ -98,7 +69,7 @@ static void add_memory_record(void *ptr, size_t size) {
   
   // 可选的栈回溯（如果启用）
   if (g_backtrace_enabled) {
-    record->backtrace_size = capture_backtrace(record->backtrace, 16);
+    record->backtrace_size = backtrace_capture(record->backtrace, 16);
     if (g_debug) {
       LOGD("Captured backtrace: %d frames for ptr=%p", record->backtrace_size, ptr);
     }
@@ -108,17 +79,14 @@ static void add_memory_record(void *ptr, size_t size) {
 
   // 使用哈希表添加记录
   if (hash_table_add(record) != 0) {
-    // 添加失败，释放记录到内存池
     pool_free_record(record);
     g_in_hook = false;
     return;
   }
 
-  // 只更新 total 统计（原子操作，无锁）
-  atomic_fetch_add_explicit(&g_total_alloc_count, 1, memory_order_relaxed);
-  atomic_fetch_add_explicit(&g_total_alloc_size, size, memory_order_relaxed);
+  // 更新统计信息
+  memory_stats_update_alloc(size);
 
-  // 在调用任何可能触发malloc的函数之前重置标志
   g_in_hook = false;
 
   if (g_debug) {
@@ -142,9 +110,8 @@ static void remove_memory_record(void *ptr) {
     // 释放记录到内存池（而不是调用 free）
     pool_free_record(record);
 
-    // 只更新 total 统计（原子操作，无锁）
-    atomic_fetch_add_explicit(&g_total_free_count, 1, memory_order_relaxed);
-    atomic_fetch_add_explicit(&g_total_free_size, freed_size, memory_order_relaxed);
+    // 更新统计信息
+    memory_stats_update_free(freed_size);
     
     // 在调用任何可能触发malloc的函数之前重置标志
     g_in_hook = false;
@@ -241,6 +208,9 @@ int memory_tracker_init(bool debug, bool enable_backtrace) {
   
   // 初始化内存池
   pool_init(original_malloc);
+  
+  // 初始化统计模块
+  memory_stats_init();
 
   // 初始化bytehook
   int ret = bytehook_init(BYTEHOOK_MODE_AUTOMATIC, debug);
@@ -374,255 +344,40 @@ int memory_tracker_unhook(const char **so_names, int count) {
   return 0;
 }
 
-// 用于计算当前统计的回调数据结构
-typedef struct {
-  uint64_t current_count;
-  uint64_t current_size;
-} stats_calc_context_t;
-
-// 统计计算回调函数
-static bool stats_calc_callback(memory_record_t *record, void *user_data) {
-  stats_calc_context_t *ctx = (stats_calc_context_t *)user_data;
-  ctx->current_count++;
-  ctx->current_size += record->size;
-  return true;  // 继续遍历
+// 导出函数供 leak_report 模块使用
+bool leak_report_is_initialized(void) {
+  return g_initialized;
 }
 
-// 计算当前统计（遍历哈希表）
-static void calculate_current_stats(uint64_t *count, uint64_t *size) {
-  stats_calc_context_t ctx = {0};
-  hash_table_foreach(stats_calc_callback, &ctx);
-  *count = ctx.current_count;
-  *size = ctx.current_size;
+void *leak_report_get_original_malloc(void) {
+  return original_malloc;
 }
 
-// 用于遍历的回调数据结构
-typedef struct {
-  char **report;
-  size_t *buffer_size;
-  int *offset;
-  int *leak_count;
-  int max_leaks;
-} leak_report_context_t;
-
-// 遍历回调函数
-static bool leak_report_callback(memory_record_t *record, void *user_data) {
-  leak_report_context_t *ctx = (leak_report_context_t *)user_data;
-  
-  if (*ctx->leak_count >= ctx->max_leaks) {
-    return false;  // 停止遍历
-  }
-  
-  // 计算需要的空间（包括栈回溯）
-  int base_needed = snprintf(NULL, 0, "Leak #%d: ptr=%p, size=%zu\n",
-                            *ctx->leak_count + 1, record->ptr, record->size);
-  
-  int backtrace_needed = 0;
-  if (record->backtrace_size > 0) {
-    backtrace_needed = snprintf(NULL, 0, "  Backtrace (%d frames):\n", record->backtrace_size);
-    for (int i = 0; i < record->backtrace_size; i++) {
-      // 计算符号解析后的长度（符号名最长256，库名最长256，加上格式化字符）
-      // 格式: "    #%d: %p %s+%td (%s)\n"
-      backtrace_needed += 512;  // 预留足够空间
-    }
-  }
-  
-  int needed = base_needed + backtrace_needed;
-  
-  // 检查缓冲区是否足够
-  if ((size_t)*ctx->offset >= *ctx->buffer_size || *ctx->buffer_size - *ctx->offset < (size_t)needed + 1) {
-    // 需要扩展缓冲区，确保新大小足够
-    size_t new_size = *ctx->buffer_size * 2;
-    while (new_size - *ctx->offset < (size_t)needed + 1) {
-      new_size *= 2;
-    }
-    
-    char *new_report = NULL;
-    if (original_malloc != NULL) {
-      new_report = (char *)original_malloc(new_size);
-      if (new_report != NULL) {
-        memcpy(new_report, *ctx->report, *ctx->offset);
-        original_free(*ctx->report);
-      }
-    }
-    
-    if (new_report == NULL) {
-      LOGE("Failed to expand report buffer");
-      return false;  // 扩展失败，停止遍历
-    }
-    
-    *ctx->report = new_report;
-    *ctx->buffer_size = new_size;
-  }
-  
-  // 写入基本信息
-  *ctx->offset += snprintf(*ctx->report + *ctx->offset, *ctx->buffer_size - *ctx->offset,
-                          "Leak #%d: ptr=%p, size=%zu\n",
-                          *ctx->leak_count + 1, record->ptr, record->size);
-  
-  // 写入栈回溯信息（如果有）
-  if (record->backtrace_size > 0) {
-    LOGD("Writing backtrace for leak #%d: %d frames", *ctx->leak_count + 1, record->backtrace_size);
-    *ctx->offset += snprintf(*ctx->report + *ctx->offset, *ctx->buffer_size - *ctx->offset,
-                            "  Backtrace (%d frames):\n", record->backtrace_size);
-    for (int i = 0; i < record->backtrace_size; i++) {
-      // 确保有足够空间
-      if ((size_t)*ctx->offset >= *ctx->buffer_size - 512) {
-        LOGW("Buffer nearly full, stopping backtrace output");
-        break;
-      }
-      
-      // 尝试解析符号
-      Dl_info info;
-      if (dladdr(record->backtrace[i], &info) && info.dli_sname) {
-        // 成功解析到符号名
-        const char *symbol = info.dli_sname;
-        const char *lib = info.dli_fname ? strrchr(info.dli_fname, '/') : NULL;
-        lib = lib ? lib + 1 : info.dli_fname;
-
-        // 计算偏移
-        ptrdiff_t offset = (char *)record->backtrace[i] - (char *)info.dli_saddr;
-        
-        size_t remaining = *ctx->buffer_size - *ctx->offset;
-        int written = snprintf(*ctx->report + *ctx->offset, remaining,
-                              "    #%d: %p %s+%td (%s)\n", 
-                              i, record->backtrace[i], symbol, offset, lib ? lib : "?");
-        if (written > 0 && (size_t)written < remaining) {
-          *ctx->offset += written;
-        } else {
-          LOGW("Buffer overflow prevented at frame %d", i);
-          break;
-        }
-      } else {
-        // 无法解析，只显示地址
-        size_t remaining = *ctx->buffer_size - *ctx->offset;
-        int written = snprintf(*ctx->report + *ctx->offset, remaining,
-                              "    #%d: %p\n", i, record->backtrace[i]);
-        if (written > 0 && (size_t)written < remaining) {
-          *ctx->offset += written;
-        } else {
-          LOGW("Buffer overflow prevented at frame %d", i);
-          break;
-        }
-      }
-    }
-  } else {
-    LOGD("No backtrace for leak #%d (backtrace_size=%d)", *ctx->leak_count + 1, record->backtrace_size);
-  }
-  
-  (*ctx->leak_count)++;
-  return true;  // 继续遍历
-}
-
-// 获取内存泄漏报告
-char *memory_tracker_get_leak_report(void) {
-  if (!g_initialized) {
-    return strdup("Memory tracker not initialized");
-  }
-
-  // 先分配缓冲区
-  size_t buffer_size = 4096;
-  char *report = NULL;
-  if (original_malloc != NULL) {
-    report = (char *)original_malloc(buffer_size);
-  } else {
-    report = (char *)malloc(buffer_size);
-  }
-  
-  if (report == NULL) {
-    return NULL;
-  }
-
-  // 读取 total 统计（原子操作）
-  uint64_t total_alloc_count = atomic_load_explicit(&g_total_alloc_count, memory_order_relaxed);
-  uint64_t total_alloc_size = atomic_load_explicit(&g_total_alloc_size, memory_order_relaxed);
-  uint64_t total_free_count = atomic_load_explicit(&g_total_free_count, memory_order_relaxed);
-  uint64_t total_free_size = atomic_load_explicit(&g_total_free_size, memory_order_relaxed);
-  
-  // 计算 current 统计（遍历哈希表）
-  uint64_t current_count, current_size;
-  calculate_current_stats(&current_count, &current_size);
-
-  int offset = 0;
-  offset += snprintf(report + offset, buffer_size - offset,
-                     "=== Memory Leak Report ===\n"
-                     "Total Allocations: %llu (%llu bytes)\n"
-                     "Total Frees: %llu (%llu bytes)\n"
-                     "Current Leaks: %llu (%llu bytes)\n\n",
-                     (unsigned long long)total_alloc_count,
-                     (unsigned long long)total_alloc_size,
-                     (unsigned long long)total_free_count,
-                     (unsigned long long)total_free_size,
-                     (unsigned long long)current_count,
-                     (unsigned long long)current_size);
-
-  // 使用哈希表遍历接口
-  int leak_count = 0;
-  leak_report_context_t ctx = {
-    .report = &report,
-    .buffer_size = &buffer_size,
-    .offset = &offset,
-    .leak_count = &leak_count,
-    .max_leaks = 100
-  };
-  
-  hash_table_foreach(leak_report_callback, &ctx);
-
-  return report;
-}
-
-// 将内存泄漏报告导出到文件
-int memory_tracker_dump_leak_report(const char *file_path) {
-  if (!g_initialized || file_path == NULL) {
-    return -1;
-  }
-
-  char *report = memory_tracker_get_leak_report();
-  if (report == NULL) {
-    return -1;
-  }
-
-  int fd = open(file_path, O_CREAT | O_WRONLY | O_CLOEXEC | O_TRUNC, S_IRUSR | S_IWUSR);
-  if (fd < 0) {
-    LOGE("Failed to open file: %s", file_path);
-    if (original_free != NULL) {
-      original_free(report);
-    } else {
-      free(report);
-    }
-    return -1;
-  }
-
-  ssize_t written = write(fd, report, strlen(report));
-  close(fd);
-  
+void leak_report_get_original_free(void *ptr) {
   if (original_free != NULL) {
-    original_free(report);
+    original_free(ptr);
   } else {
-    free(report);
+    free(ptr);
   }
-
-  if (written < 0) {
-    LOGE("Failed to write to file: %s", file_path);
-    return -1;
-  }
-
-  LOGI("Leak report dumped to: %s", file_path);
-  return 0;
 }
 
-// 获取内存统计信息
-void memory_tracker_get_stats(memory_stats_t *stats) {
-  if (stats == NULL) return;
+void leak_report_get_stats(memory_stats_t *stats) {
+  memory_tracker_get_stats(stats);
+}
 
-  // 读取 total 统计（原子操作）
-  stats->total_alloc_count = atomic_load_explicit(&g_total_alloc_count, memory_order_relaxed);
-  stats->total_alloc_size = atomic_load_explicit(&g_total_alloc_size, memory_order_relaxed);
-  stats->total_free_count = atomic_load_explicit(&g_total_free_count, memory_order_relaxed);
-  stats->total_free_size = atomic_load_explicit(&g_total_free_size, memory_order_relaxed);
-  
-  // 计算 current 统计（遍历哈希表）
-  calculate_current_stats(&stats->current_alloc_count, &stats->current_alloc_size);
+// 获取内存泄漏报告（委托给 leak_report 模块）
+char *memory_tracker_get_leak_report(void) {
+  return leak_report_generate();
+}
+
+// 将内存泄漏报告导出到文件（委托给 leak_report 模块）
+int memory_tracker_dump_leak_report(const char *file_path) {
+  return leak_report_dump(file_path);
+}
+
+// 获取内存统计信息（委托给 memory_stats 模块）
+void memory_tracker_get_stats(memory_stats_t *stats) {
+  memory_stats_get(stats);
 }
 
 // 重置统计信息
@@ -636,13 +391,8 @@ void memory_tracker_reset_stats(void) {
   // 清理内存池
   pool_cleanup(original_free);
 
-  // 重置原子统计
-  atomic_store_explicit(&g_total_alloc_count, 0, memory_order_relaxed);
-  atomic_store_explicit(&g_total_alloc_size, 0, memory_order_relaxed);
-  atomic_store_explicit(&g_total_free_count, 0, memory_order_relaxed);
-  atomic_store_explicit(&g_total_free_size, 0, memory_order_relaxed);
-  
-  LOGI("Memory stats reset");
+  // 重置统计信息（委托给 memory_stats 模块）
+  memory_stats_reset();
 }
 
 // 启用或禁用栈回溯

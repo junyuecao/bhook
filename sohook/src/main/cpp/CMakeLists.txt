@@ -18,6 +18,9 @@ add_library(sohook SHARED
     memory_tracker.c
     memory_hash_table.c
     memory_pool.c
+    leak_report.c
+    memory_stats.c
+    backtrace.c
 )
 
 # 包含头文件目录

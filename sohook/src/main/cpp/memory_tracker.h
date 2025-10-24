@@ -8,19 +8,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "memory_stats.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-// 内存统计信息结构
-typedef struct {
-  uint64_t total_alloc_count;    // 总分配次数
-  uint64_t total_alloc_size;     // 总分配大小（字节）
-  uint64_t total_free_count;     // 总释放次数
-  uint64_t total_free_size;      // 总释放大小（字节）
-  uint64_t current_alloc_count;  // 当前未释放的分配次数
-  uint64_t current_alloc_size;   // 当前未释放的内存大小（字节）
-} memory_stats_t;
+
 
 // 内存分配记录结构
 typedef struct memory_record {
