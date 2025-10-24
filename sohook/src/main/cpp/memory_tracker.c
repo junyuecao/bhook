@@ -15,6 +15,7 @@
 
 #include "bytehook.h"
 #include "memory_hash_table.h"
+#include "memory_pool.h"
 
 #define LOG_TAG "MemoryTracker"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
@@ -37,17 +38,6 @@ static _Atomic uint64_t g_total_alloc_size = 0;
 static _Atomic uint64_t g_total_free_count = 0;
 static _Atomic uint64_t g_total_free_size = 0;
 
-// 内存池：用于快速分配 memory_record_t
-#define POOL_CHUNK_SIZE 1024  // 每个块包含 1024 个 record
-typedef struct pool_chunk {
-  memory_record_t records[POOL_CHUNK_SIZE];
-  _Atomic uint32_t allocated;  // 已分配的数量
-  struct pool_chunk *next;
-} pool_chunk_t;
-
-static pool_chunk_t *g_pool_head = NULL;
-static pthread_mutex_t g_pool_mutex = PTHREAD_MUTEX_INITIALIZER;
-
 // bytehook stub数组
 #define MAX_HOOKS 64
 static bytehook_stub_t g_malloc_stubs[MAX_HOOKS];
@@ -62,75 +52,6 @@ static __thread bool g_in_hook = false;
 // 原始函数指针
 static void *(*original_malloc)(size_t) = NULL;
 static void (*original_free)(void *) = NULL;
-
-// 内存池函数：从池中分配一个 record
-static memory_record_t *pool_alloc_record(void) {
-  pthread_mutex_lock(&g_pool_mutex);
-  
-  // 查找有空闲空间的 chunk
-  pool_chunk_t *chunk = g_pool_head;
-  while (chunk != NULL) {
-    uint32_t allocated = atomic_load_explicit(&chunk->allocated, memory_order_relaxed);
-    if (allocated < POOL_CHUNK_SIZE) {
-      // 尝试原子递增
-      uint32_t old_val = allocated;
-      if (atomic_compare_exchange_weak_explicit(&chunk->allocated, &old_val, allocated + 1,
-                                                  memory_order_relaxed, memory_order_relaxed)) {
-        pthread_mutex_unlock(&g_pool_mutex);
-        return &chunk->records[allocated];
-      }
-    }
-    chunk = chunk->next;
-  }
-  
-  // 没有空闲空间，分配新的 chunk
-  pool_chunk_t *new_chunk;
-  if (original_malloc != NULL) {
-    new_chunk = (pool_chunk_t *)original_malloc(sizeof(pool_chunk_t));
-  } else {
-    new_chunk = (pool_chunk_t *)malloc(sizeof(pool_chunk_t));
-  }
-  
-  if (new_chunk == NULL) {
-    pthread_mutex_unlock(&g_pool_mutex);
-    return NULL;
-  }
-  
-  memset(new_chunk, 0, sizeof(pool_chunk_t));
-  atomic_store_explicit(&new_chunk->allocated, 1, memory_order_relaxed);
-  new_chunk->next = g_pool_head;
-  g_pool_head = new_chunk;
-  
-  pthread_mutex_unlock(&g_pool_mutex);
-  return &new_chunk->records[0];
-}
-
-// 内存池函数：释放一个 record（标记为可重用）
-static void pool_free_record(memory_record_t *record) {
-  // 简单实现：不回收，让内存池持续增长
-  // 更复杂的实现可以维护一个空闲列表
-  // 对于内存泄漏检测工具，这是可接受的
-  (void)record;  // 标记为未使用
-}
-
-// 清理内存池
-static void pool_cleanup(void) {
-  pthread_mutex_lock(&g_pool_mutex);
-  
-  pool_chunk_t *chunk = g_pool_head;
-  while (chunk != NULL) {
-    pool_chunk_t *next = chunk->next;
-    if (original_free != NULL) {
-      original_free(chunk);
-    } else {
-      free(chunk);
-    }
-    chunk = next;
-  }
-  
-  g_pool_head = NULL;
-  pthread_mutex_unlock(&g_pool_mutex);
-}
 
 // 添加内存记录（哈希表版本）
 static void add_memory_record(void *ptr, size_t size, const char *so_name) {
@@ -279,6 +200,9 @@ int memory_tracker_init(bool debug) {
     LOGE("Hash table init failed");
     return -1;
   }
+  
+  // 初始化内存池
+  pool_init(original_malloc);
 
   // 初始化bytehook
   int ret = bytehook_init(BYTEHOOK_MODE_AUTOMATIC, debug);
@@ -604,7 +528,7 @@ void memory_tracker_reset_stats(void) {
   hash_table_init();
   
   // 清理内存池
-  pool_cleanup();
+  pool_cleanup(original_free);
 
   // 重置原子统计
   atomic_store_explicit(&g_total_alloc_count, 0, memory_order_relaxed);
