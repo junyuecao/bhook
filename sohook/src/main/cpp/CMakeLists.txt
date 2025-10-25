@@ -51,3 +51,40 @@ target_compile_options(sohook PUBLIC -Wno-implicit-int-float-conversion)
 set_target_properties(sohook PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}"
 )
+
+# ============================================
+# 测试库：test_memory
+# 用于准确性测试的独立内存分配库
+# ============================================
+
+# 检查测试源文件是否存在
+set(TEST_MEMORY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../androidTest/cpp")
+if(EXISTS "${TEST_MEMORY_DIR}/test_memory.c")
+    message(STATUS "Building test_memory library for accuracy tests")
+    
+    # 创建测试内存库
+    add_library(test_memory SHARED
+        ${TEST_MEMORY_DIR}/test_memory.c
+        ${TEST_MEMORY_DIR}/test_memory_jni.c
+    )
+    
+    # 包含头文件
+    target_include_directories(test_memory PRIVATE
+        ${TEST_MEMORY_DIR}
+    )
+    
+    # 链接库
+    target_link_libraries(test_memory
+        log
+        android
+    )
+    
+    # 设置输出目录
+    set_target_properties(test_memory PROPERTIES
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}"
+    )
+    
+    message(STATUS "✓ test_memory library configured")
+else()
+    message(STATUS "Test memory sources not found, skipping test library build")
+endif()
