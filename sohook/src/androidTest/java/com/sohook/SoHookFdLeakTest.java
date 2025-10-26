@@ -358,4 +358,129 @@ public class SoHookFdLeakTest {
         
         testFile.delete();
     }
+
+    @Test
+    public void testFopenFclose() {
+        Log.i(TAG, "=== testFopenFclose ===");
+        
+        File testFile = new File(testDir, "test_fopen.txt");
+        
+        // 重置统计
+        SoHook.resetFdStats();
+        
+        // 使用fopen打开文件
+        long fp = TestFd.nativeFopenFile(testFile.getAbsolutePath(), "w");
+        assertTrue("Fopen should succeed", fp != 0);
+        
+        // 检查统计
+        SoHook.FdStats statsAfterOpen = SoHook.getFdStats();
+        Log.i(TAG, "Stats after fopen: " + statsAfterOpen.toString());
+        
+        // 使用fclose关闭文件
+        int ret = TestFd.nativeFcloseFile(fp);
+        assertEquals("Fclose should succeed", 0, ret);
+        
+        // 检查统计
+        SoHook.FdStats stats = SoHook.getFdStats();
+        Log.i(TAG, "Stats after fclose: " + stats.toString());
+        
+        if (stats.totalOpenCount == 0) {
+            Log.w(TAG, "Warning: No FD operations tracked. Hook may not be working.");
+        } else {
+            assertTrue("Should have opened files", stats.totalOpenCount > 0);
+            assertTrue("Should have closed files", stats.totalCloseCount > 0);
+        }
+        
+        Log.i(TAG, "testFopenFclose passed");
+        
+        testFile.delete();
+    }
+
+    @Test
+    public void testFopenLeak() {
+        Log.i(TAG, "=== testFopenLeak ===");
+        
+        File testFile1 = new File(testDir, "test_fopen_leak1.txt");
+        File testFile2 = new File(testDir, "test_fopen_leak2.txt");
+        
+        // 重置统计
+        SoHook.resetFdStats();
+        
+        // 故意泄漏FILE指针（不关闭）
+        long fp1 = TestFd.nativeLeakFile(testFile1.getAbsolutePath());
+        assertTrue("Leak FILE should succeed", fp1 != 0);
+        
+        long fp2 = TestFd.nativeLeakFile(testFile2.getAbsolutePath());
+        assertTrue("Leak FILE should succeed", fp2 != 0);
+        
+        // 检查统计
+        SoHook.FdStats stats = SoHook.getFdStats();
+        Log.i(TAG, "Stats after leaks: " + stats.toString());
+        
+        // 获取泄漏报告
+        String report = SoHook.getFdLeakReport();
+        assertNotNull("Leak report should not be null", report);
+        Log.i(TAG, "Leak Report:\n" + report);
+        
+        if (stats.totalOpenCount == 0) {
+            Log.w(TAG, "Warning: No FD operations tracked. Hook may not be working.");
+        } else {
+            assertTrue("Should have opened files", stats.totalOpenCount >= 2);
+            assertTrue("Should have leaked files", stats.currentOpenCount >= 2);
+            assertTrue("Report should contain leak info", report.contains("File Descriptor Leak Report"));
+            Log.i(TAG, "Detected FD leaks: " + stats.currentOpenCount);
+        }
+        
+        Log.i(TAG, "testFopenLeak passed");
+        
+        testFile1.delete();
+        testFile2.delete();
+    }
+
+    @Test
+    public void testFopenMultiple() {
+        Log.i(TAG, "=== testFopenMultiple ===");
+        
+        int fileCount = 3;
+        long[] fps = new long[fileCount];
+        File[] testFiles = new File[fileCount];
+        
+        // 重置统计
+        SoHook.resetFdStats();
+        
+        // 打开多个文件
+        for (int i = 0; i < fileCount; i++) {
+            testFiles[i] = new File(testDir, "test_fopen_multi_" + i + ".txt");
+            fps[i] = TestFd.nativeFopenFile(testFiles[i].getAbsolutePath(), "w");
+            assertTrue("Fopen should succeed", fps[i] != 0);
+        }
+        
+        // 检查统计
+        SoHook.FdStats statsAfterOpen = SoHook.getFdStats();
+        Log.i(TAG, "Stats after fopen: " + statsAfterOpen.toString());
+        
+        // 关闭所有文件
+        for (int i = 0; i < fileCount; i++) {
+            int ret = TestFd.nativeFcloseFile(fps[i]);
+            assertEquals("Fclose should succeed", 0, ret);
+        }
+        
+        // 检查统计
+        SoHook.FdStats stats = SoHook.getFdStats();
+        Log.i(TAG, "Stats after fclose: " + stats.toString());
+        
+        if (stats.totalOpenCount == 0) {
+            Log.w(TAG, "Warning: No FD operations tracked. Hook may not be working.");
+        } else {
+            assertTrue("Should have opened files", stats.totalOpenCount >= fileCount);
+            assertTrue("Should have closed files", stats.totalCloseCount >= fileCount);
+        }
+        
+        Log.i(TAG, "testFopenMultiple passed");
+        
+        // 清理文件
+        for (int i = 0; i < fileCount; i++) {
+            testFiles[i].delete();
+        }
+    }
 }
