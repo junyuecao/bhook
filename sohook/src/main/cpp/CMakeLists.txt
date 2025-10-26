@@ -2,25 +2,28 @@ cmake_minimum_required(VERSION 3.18.1)
 
 project(sohook)
 
-# 设置C标准
+if((${ANDROID_ABI} STREQUAL "arm64-v8a") OR (${ANDROID_ABI} STREQUAL "x86_64"))
+    set(ARCH_LINK_FLAGS "-Wl,-z,max-page-size=16384")
+else()
+    set(ARCH_LINK_FLAGS "")
+endif()
+
+# 设置C/C++标准
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(DEFAULT_WARNING_FLAGS -Wno-unused-parameter -Wno-implicit-int-float-conversion)
 
 # 添加编译选项
 add_compile_options(-Wall -Wextra -Werror)
 
-# 查找bytehook库
-find_package(bytehook REQUIRED CONFIG)
-
-# 调试信息
-message(STATUS "bytehook_FOUND: ${bytehook_FOUND}")
-if(TARGET bytehook::bytehook)
-    message(STATUS "✓ bytehook::bytehook target found")
-    get_target_property(BYTEHOOK_LOCATION bytehook::bytehook IMPORTED_LOCATION)
-    message(STATUS "  IMPORTED_LOCATION: ${BYTEHOOK_LOCATION}")
-else()
-    message(FATAL_ERROR "✗ bytehook::bytehook target NOT found")
-endif()
+ if(DEPENDENCY_ON_LOCAL_LIBRARY)
+     message("CJY")
+     include(${CMAKE_CURRENT_SOURCE_DIR}/../../../../bytehook/local_dependency.cmake)
+ else()
+     find_package(bytehook REQUIRED CONFIG)
+ endif()
 
 # 创建sohook共享库
 add_library(sohook SHARED
@@ -44,8 +47,8 @@ target_link_libraries(sohook
     log
     android
 )
-target_compile_options(sohook PUBLIC -Wno-unused-parameter)
-target_compile_options(sohook PUBLIC -Wno-implicit-int-float-conversion)
+target_compile_options(sohook PUBLIC ${DEFAULT_WARNING_FLAGS})
+target_link_options(sohook PUBLIC ${ARCH_LINK_FLAGS})
 
 # 设置输出目录
 set_target_properties(sohook PROPERTIES
@@ -78,6 +81,8 @@ if(EXISTS "${TEST_MEMORY_DIR}/test_memory.c")
         log
         android
     )
+    target_compile_options(test_memory PUBLIC ${DEFAULT_WARNING_FLAGS})
+
     
     # 设置输出目录
     set_target_properties(test_memory PROPERTIES
@@ -87,4 +92,41 @@ if(EXISTS "${TEST_MEMORY_DIR}/test_memory.c")
     message(STATUS "✓ test_memory library configured")
 else()
     message(STATUS "Test memory sources not found, skipping test library build")
+endif()
+
+# ============================================
+# 测试库：test_memory_cpp
+# 用于 C++ new/delete 测试的独立库
+# ============================================
+
+# 检查 C++ 测试源文件是否存在
+if(EXISTS "${TEST_MEMORY_DIR}/test_memory_cpp.cpp")
+    message(STATUS "Building test_memory_cpp library for C++ new/delete tests")
+    
+    # 创建 C++ 测试内存库
+    add_library(test_memory_cpp SHARED
+        ${TEST_MEMORY_DIR}/test_memory_cpp.cpp
+        ${TEST_MEMORY_DIR}/test_memory_cpp_jni.c
+    )
+    
+    # 包含头文件
+    target_include_directories(test_memory_cpp PRIVATE
+        ${TEST_MEMORY_DIR}
+    )
+    
+    # 链接库
+    target_link_libraries(test_memory_cpp
+        log
+        android
+    )
+    target_compile_options(test_memory_cpp PUBLIC ${DEFAULT_WARNING_FLAGS})
+
+    # 设置输出目录
+    set_target_properties(test_memory_cpp PROPERTIES
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}"
+    )
+    
+    message(STATUS "✓ test_memory_cpp library configured")
+else()
+    message(STATUS "C++ test memory sources not found, skipping C++ test library build")
 endif()

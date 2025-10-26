@@ -24,6 +24,9 @@ android {
             cmake {
                 cppFlags '-std=c++11'
                 arguments '-DANDROID_STL=c++_shared'
+                if(rootProject.ext.dependencyOnLocalLibrary) {
+                    arguments '-DDEPENDENCY_ON_LOCAL_LIBRARY=ON'
+                }
             }
         }
     }
