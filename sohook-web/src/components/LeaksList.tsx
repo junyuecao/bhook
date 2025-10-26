@@ -127,7 +127,7 @@ const LeaksListComponent = ({ leaks, isLoading }: LeaksListProps) => {
         ) : (
           <div className="space-y-3 max-h-[600px] overflow-y-auto">
             {displayLeaks.map((leak, idx) => (
-              <LeakItem key={`${leak.ptr}-${idx}`} leak={leak} />
+              <LeakItem key={`leak-${idx}-${leak.count}-${leak.totalSize}`} leak={leak} />
             ))}
           </div>
         )}
