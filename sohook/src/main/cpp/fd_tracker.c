@@ -225,6 +225,23 @@ int fd_tracker_hook(const char **so_names, int count) {
     } else {
       LOGE("Failed to hook open in %s", so_names[i]);
     }
+    bytehook_stub_t stub___open_real =
+        bytehook_hook_single(so_names[i], NULL, "__open_real", (void *)open_proxy, NULL, NULL);
+    if (stub___open_real != NULL) {
+      g_stubs[g_stub_count++] = stub___open_real;
+      LOGI("Hooked __open_real in %s", so_names[i]);
+    } else {
+      LOGE("Failed to hook __open_real in %s", so_names[i]);
+    }
+    bytehook_stub_t stub___open_2 =
+        bytehook_hook_single(so_names[i], NULL, "__open_2", (void *)open_proxy, NULL, NULL);
+    if (stub___open_2 != NULL) {
+      g_stubs[g_stub_count++] = stub___open_2;
+      LOGI("Hooked __open_2 in %s", so_names[i]);
+    } else {
+      LOGE("Failed to __open_2 open in %s", so_names[i]);
+    }
+
 
     // Hook close
     bytehook_stub_t stub_close =
