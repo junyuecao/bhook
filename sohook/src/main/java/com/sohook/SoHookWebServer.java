@@ -71,6 +71,13 @@ public class SoHookWebServer extends NanoHTTPD {
         return isRunning;
     }
 
+    /**
+     * 获取服务器端口
+     */
+    public int getPort() {
+        return getListeningPort();
+    }
+
     @Override
     public Response serve(IHTTPSession session) {
         String uri = session.getUri();

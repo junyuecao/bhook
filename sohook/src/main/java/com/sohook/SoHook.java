@@ -7,7 +7,6 @@ import java.util.List;
 public class SoHook {
     private static final String TAG = "SoHook";
     private static boolean sInitialized = false;
-    private static SoHookWebServer sWebServer = null;
 
     static {
         try {
@@ -173,62 +172,6 @@ public class SoHook {
             return false;
         }
         return nativeIsBacktraceEnabled();
-    }
-
-    /**
-     * 启动 Web 服务器
-     * @param port 端口号，默认 8080
-     * @return true 成功，false 失败
-     */
-    public static boolean startWebServer(int port) {
-        if (!sInitialized) {
-            Log.e(TAG, "SoHook not initialized, call init() first");
-            return false;
-        }
-        
-        if (sWebServer != null && sWebServer.isRunning()) {
-            Log.w(TAG, "Web server is already running");
-            return true;
-        }
-        
-        sWebServer = new SoHookWebServer(port);
-        boolean success = sWebServer.startServer();
-        
-        if (success) {
-            Log.i(TAG, "Web server started on port " + port);
-        } else {
-            Log.e(TAG, "Failed to start web server");
-            sWebServer = null;
-        }
-        
-        return success;
-    }
-
-    /**
-     * 启动 Web 服务器（使用默认端口 8080）
-     * @return true 成功，false 失败
-     */
-    public static boolean startWebServer() {
-        return startWebServer(8080);
-    }
-
-    /**
-     * 停止 Web 服务器
-     */
-    public static void stopWebServer() {
-        if (sWebServer != null) {
-            sWebServer.stopServer();
-            sWebServer = null;
-            Log.i(TAG, "Web server stopped");
-        }
-    }
-
-    /**
-     * 检查 Web 服务器是否运行
-     * @return true 运行中，false 未运行
-     */
-    public static boolean isWebServerRunning() {
-        return sWebServer != null && sWebServer.isRunning();
     }
 
     // Native methods

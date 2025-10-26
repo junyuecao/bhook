@@ -14,6 +14,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import com.sohook.SoHook;
+import com.sohook.SoHookWebManager;
 
 import java.net.Inet4Address;
 import java.net.InetAddress;
@@ -95,7 +96,7 @@ public class SoHookWebTestActivity extends AppCompatActivity {
             return;
         }
 
-        boolean success = SoHook.startWebServer(WEB_SERVER_PORT);
+        boolean success = SoHookWebManager.startServer(WEB_SERVER_PORT);
         if (success) {
             isServerRunning = true;
             String ipAddress = getLocalIpAddress();
@@ -125,7 +126,7 @@ public class SoHookWebTestActivity extends AppCompatActivity {
             return;
         }
 
-        SoHook.stopWebServer();
+        SoHookWebManager.stopServer();
         isServerRunning = false;
         
         tvServerStatus.setText("状态: 已停止 ⭕");
