@@ -48,7 +48,7 @@ public class SoHook {
     }
 
     /**
-     * 通过Hook soNames中的so库，实现针对这些so文件的内存泄漏检测功能
+     * 通过Hook soNames中的so库，实现针对这些so文件的内存和文件描述符泄漏检测功能
      * @param soNames 需要监控的so文件名列表
      * @return 0表示成功，其他值表示失败
      */
@@ -66,7 +66,7 @@ public class SoHook {
     }
 
     /**
-     * 停止对指定so库的内存监控
+     * 停止对指定so库的内存和文件描述符监控
      * @param soNames 需要停止监控的so文件名列表
      * @return 0表示成功，其他值表示失败
      */
@@ -84,7 +84,7 @@ public class SoHook {
     }
 
     /**
-     * 停止对所有已hook的so库的内存监控
+     * 停止对所有已hook的so库的内存和文件描述符监控
      * @return 0表示成功，其他值表示失败
      */
     public static int unhookAll() {
@@ -174,7 +174,63 @@ public class SoHook {
         return nativeIsBacktraceEnabled();
     }
 
-    // Native methods
+    // ============================================
+    // 文件描述符监控相关接口
+    // ============================================
+
+    /**
+     * 获取文件描述符泄漏报告
+     * @return 文件描述符泄漏报告字符串
+     */
+    public static String getFdLeakReport() {
+        if (!sInitialized) {
+            Log.e(TAG, "SoHook not initialized");
+            return "SoHook not initialized";
+        }
+        return nativeGetFdLeakReport();
+    }
+
+    /**
+     * 将文件描述符泄漏报告导出到文件
+     * @param filePath 文件路径
+     * @return 0表示成功，其他值表示失败
+     */
+    public static int dumpFdLeakReport(String filePath) {
+        if (!sInitialized) {
+            Log.e(TAG, "SoHook not initialized");
+            return -1;
+        }
+        if (filePath == null || filePath.isEmpty()) {
+            Log.w(TAG, "filePath is null or empty");
+            return -1;
+        }
+        return nativeDumpFdLeakReport(filePath);
+    }
+
+    /**
+     * 获取当前文件描述符统计信息
+     * @return FdStats对象，包含文件打开和关闭的统计信息
+     */
+    public static FdStats getFdStats() {
+        if (!sInitialized) {
+            Log.e(TAG, "SoHook not initialized");
+            return new FdStats();
+        }
+        return nativeGetFdStats();
+    }
+
+    /**
+     * 重置文件描述符统计信息
+     */
+    public static void resetFdStats() {
+        if (!sInitialized) {
+            Log.e(TAG, "SoHook not initialized");
+            return;
+        }
+        nativeResetFdStats();
+    }
+
+    // Native methods - 内存和文件描述符跟踪
     private static native int nativeInit(boolean debug, boolean enableBacktrace);
     private static native int nativeHook(String[] soNames);
     private static native int nativeUnhook(String[] soNames);
@@ -186,6 +242,13 @@ public class SoHook {
     private static native void nativeSetBacktraceEnabled(boolean enable);
     private static native boolean nativeIsBacktraceEnabled();
     static native String nativeGetLeaksJson();
+
+    // Native methods - 文件描述符专用
+    private static native String nativeGetFdLeakReport();
+    private static native int nativeDumpFdLeakReport(String filePath);
+    private static native FdStats nativeGetFdStats();
+    private static native void nativeResetFdStats();
+    static native String nativeGetFdLeaksJson();
 
     /**
      * 内存统计信息类
@@ -216,6 +279,30 @@ public class SoHook {
                     ", totalFreeSize=" + totalFreeSize +
                     ", currentAllocCount=" + currentAllocCount +
                     ", currentAllocSize=" + currentAllocSize +
+                    '}';
+        }
+    }
+
+    /**
+     * 文件描述符统计信息类
+     */
+    public static class FdStats {
+        public long totalOpenCount = 0;       // 总打开次数
+        public long totalCloseCount = 0;      // 总关闭次数
+        public long currentOpenCount = 0;     // 当前未关闭的文件描述符数量
+
+        public FdStats() {}
+        public FdStats(long totalOpenCount, long totalCloseCount, long currentOpenCount) {
+            this.totalOpenCount = totalOpenCount;
+            this.totalCloseCount = totalCloseCount;
+            this.currentOpenCount = currentOpenCount;
+        }
+        @Override
+        public String toString() {
+            return "FdStats{" +
+                    "totalOpenCount=" + totalOpenCount +
+                    ", totalCloseCount=" + totalCloseCount +
+                    ", currentOpenCount=" + currentOpenCount +
                     '}';
         }
     }

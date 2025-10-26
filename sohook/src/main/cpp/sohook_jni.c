@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "memory_tracker.h"
+#include "fd_tracker.h"
 
 #define LOG_TAG "SoHook-JNI"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
@@ -22,7 +23,20 @@ static jint sohook_jni_init(JNIEnv *env, jclass clazz, jboolean debug, jboolean 
   (void)clazz;
 
   LOGI("Initializing SoHook (debug=%d, enable_backtrace=%d)", debug, enable_backtrace);
-  return memory_tracker_init((bool)debug, (bool)enable_backtrace);
+  
+  // 初始化内存跟踪器
+  int ret = memory_tracker_init((bool)debug, (bool)enable_backtrace);
+  if (ret != 0) {
+    return ret;
+  }
+  
+  // 初始化文件描述符跟踪器
+  ret = fd_tracker_init((bool)debug);
+  if (ret != 0) {
+    return ret;
+  }
+  
+  return 0;
 }
 
 // Native method: hook
@@ -57,8 +71,11 @@ static jint sohook_jni_hook(JNIEnv *env, jclass clazz, jobjectArray so_names) {
     (*env)->DeleteLocalRef(env, jstr);
   }
 
-  // 调用memory_tracker_hook
+  // 调用memory_tracker_hook和fd_tracker_hook
   int ret = memory_tracker_hook(c_so_names, count);
+  if (ret == 0) {
+    ret = fd_tracker_hook(c_so_names, count);
+  }
 
   // 释放字符串
   for (jsize i = 0; i < count; i++) {
@@ -105,8 +122,11 @@ static jint sohook_jni_unhook(JNIEnv *env, jclass clazz, jobjectArray so_names) 
     (*env)->DeleteLocalRef(env, jstr);
   }
 
-  // 调用memory_tracker_unhook
+  // 调用memory_tracker_unhook和fd_tracker_unhook
   int ret = memory_tracker_unhook(c_so_names, count);
+  if (ret == 0) {
+    ret = fd_tracker_unhook(c_so_names, count);
+  }
 
   // 释放字符串
   for (jsize i = 0; i < count; i++) {
@@ -126,7 +146,11 @@ static jint sohook_jni_unhook_all(JNIEnv *env, jclass clazz) {
   (void)env;
   (void)clazz;
 
-  return memory_tracker_unhook_all();
+  int ret = memory_tracker_unhook_all();
+  if (ret == 0) {
+    ret = fd_tracker_unhook_all();
+  }
+  return ret;
 }
 
 // Native method: getLeakReport
@@ -256,19 +280,133 @@ static jstring sohook_jni_get_leaks_json(JNIEnv *env, jclass clazz) {
   return jjson;
 }
 
+// ============================================
+// 文件描述符监控相关JNI方法
+// ============================================
+
+// Native method: getFdLeakReport
+static jstring sohook_jni_get_fd_leak_report(JNIEnv *env, jclass clazz) {
+  (void)clazz;
+
+  char *report = fd_tracker_get_leak_report();
+  if (report == NULL) {
+    return (*env)->NewStringUTF(env, "Failed to generate FD leak report");
+  }
+
+  jstring jreport = (*env)->NewStringUTF(env, report);
+  free(report);
+  return jreport;
+}
+
+// Native method: dumpFdLeakReport
+static jint sohook_jni_dump_fd_leak_report(JNIEnv *env, jclass clazz, jstring file_path) {
+  (void)clazz;
+
+  if (file_path == NULL) {
+    LOGE("file_path is null");
+    return -1;
+  }
+
+  const char *c_file_path = (*env)->GetStringUTFChars(env, file_path, NULL);
+  if (c_file_path == NULL) {
+    LOGE("Failed to get file_path string");
+    return -1;
+  }
+
+  int ret = fd_tracker_dump_leak_report(c_file_path);
+  (*env)->ReleaseStringUTFChars(env, file_path, c_file_path);
+  return ret;
+}
+
+// Native method: getFdStats
+static jobject sohook_jni_get_fd_stats(JNIEnv *env, jclass clazz) {
+  (void)clazz;
+
+  fd_stats_t stats;
+  fd_tracker_get_stats(&stats);
+
+  // 查找FdStats类
+  jclass stats_class = (*env)->FindClass(env, "com/sohook/SoHook$FdStats");
+  if (stats_class == NULL) {
+    LOGE("Failed to find FdStats class");
+    return NULL;
+  }
+
+  // 获取构造函数
+  jmethodID constructor = (*env)->GetMethodID(env, stats_class, "<init>", "()V");
+  if (constructor == NULL) {
+    LOGE("Failed to find FdStats constructor");
+    (*env)->DeleteLocalRef(env, stats_class);
+    return NULL;
+  }
+
+  // 创建FdStats对象
+  jobject stats_obj = (*env)->NewObject(env, stats_class, constructor);
+  if (stats_obj == NULL) {
+    LOGE("Failed to create FdStats object");
+    (*env)->DeleteLocalRef(env, stats_class);
+    return NULL;
+  }
+
+  // 设置字段值
+  jfieldID field_id;
+
+  field_id = (*env)->GetFieldID(env, stats_class, "totalOpenCount", "J");
+  (*env)->SetLongField(env, stats_obj, field_id, (jlong)stats.total_open_count);
+
+  field_id = (*env)->GetFieldID(env, stats_class, "totalCloseCount", "J");
+  (*env)->SetLongField(env, stats_obj, field_id, (jlong)stats.total_close_count);
+
+  field_id = (*env)->GetFieldID(env, stats_class, "currentOpenCount", "J");
+  (*env)->SetLongField(env, stats_obj, field_id, (jlong)stats.current_open_count);
+
+  (*env)->DeleteLocalRef(env, stats_class);
+  return stats_obj;
+}
+
+// Native method: resetFdStats
+static void sohook_jni_reset_fd_stats(JNIEnv *env, jclass clazz) {
+  (void)env;
+  (void)clazz;
+
+  fd_tracker_reset_stats();
+}
+
+// Native method: get fd leaks json
+static jstring sohook_jni_get_fd_leaks_json(JNIEnv *env, jclass clazz) {
+  (void)clazz;
+
+  char *json = fd_tracker_get_leaks_json();
+  if (json == NULL) {
+    return (*env)->NewStringUTF(env, "[]");
+  }
+
+  jstring jjson = (*env)->NewStringUTF(env, json);
+  free(json);
+  return jjson;
+}
+
 // JNI方法注册表
 static JNINativeMethod sohook_jni_methods[] = {
+    // 内存和文件描述符跟踪（统一接口）
     {"nativeInit", "(ZZ)I", (void *)sohook_jni_init},
     {"nativeHook", "([Ljava/lang/String;)I", (void *)sohook_jni_hook},
     {"nativeUnhook", "([Ljava/lang/String;)I", (void *)sohook_jni_unhook},
     {"nativeUnhookAll", "()I", (void *)sohook_jni_unhook_all},
+    // 内存跟踪专用
     {"nativeGetLeakReport", "()Ljava/lang/String;", (void *)sohook_jni_get_leak_report},
     {"nativeDumpLeakReport", "(Ljava/lang/String;)I", (void *)sohook_jni_dump_leak_report},
     {"nativeGetMemoryStats", "()Lcom/sohook/SoHook$MemoryStats;",(void *)sohook_jni_get_memory_stats},
     {"nativeResetStats", "()V", (void *)sohook_jni_reset_stats},
     {"nativeSetBacktraceEnabled", "(Z)V", (void *)sohook_jni_set_backtrace_enabled},
     {"nativeIsBacktraceEnabled", "()Z", (void *)sohook_jni_is_backtrace_enabled},
-    {"nativeGetLeaksJson", "()Ljava/lang/String;", (void *)sohook_jni_get_leaks_json}};
+    {"nativeGetLeaksJson", "()Ljava/lang/String;", (void *)sohook_jni_get_leaks_json},
+    // 文件描述符跟踪专用
+    {"nativeGetFdLeakReport", "()Ljava/lang/String;", (void *)sohook_jni_get_fd_leak_report},
+    {"nativeDumpFdLeakReport", "(Ljava/lang/String;)I", (void *)sohook_jni_dump_fd_leak_report},
+    {"nativeGetFdStats", "()Lcom/sohook/SoHook$FdStats;", (void *)sohook_jni_get_fd_stats},
+    {"nativeResetFdStats", "()V", (void *)sohook_jni_reset_fd_stats},
+    {"nativeGetFdLeaksJson", "()Ljava/lang/String;", (void *)sohook_jni_get_fd_leaks_json}};
 
 // JNI_OnLoad
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {

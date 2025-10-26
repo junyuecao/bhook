@@ -34,6 +34,7 @@ add_library(sohook SHARED
     leak_report.c
     memory_stats.c
     backtrace.c
+    fd_tracker.c
 )
 
 # 包含头文件目录
