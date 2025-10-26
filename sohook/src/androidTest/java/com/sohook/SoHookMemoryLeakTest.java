@@ -40,25 +40,24 @@ public class SoHookMemoryLeakTest {
         SoHook.init(true);
         SoHook.resetStats();
         
-        Log.i(TAG, "Test setup completed, test dir: " + testDir);
     }
 
     @After
     public void tearDown() {
-        SoHook.resetStats();
+        // Unhook 所有库，避免测试用例之间互相影响
+        SoHook.unhookAll();
         
         // 清理测试文件
-        if (testDir != null) {
-            File[] files = testDir.listFiles((dir, name) -> name.startsWith("leak_report_test"));
+        if (testDir != null && testDir.exists()) {
+            File[] files = testDir.listFiles();
             if (files != null) {
                 for (File file : files) {
-                    if (file.delete()) {
-                        Log.d(TAG, "Deleted test file: " + file.getName());
+                    if (file.getName().startsWith("leak_report_")) {
+                        file.delete();
                     }
                 }
             }
         }
-        
         Log.i(TAG, "Test teardown completed");
     }
 

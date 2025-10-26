@@ -30,6 +30,7 @@ public class SoHookAccuracyTest {
 
     @Before
     public void setUp() {
+        Log.i(TAG, "Test setUp: begin");
         context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         
         // 检查测试库是否加载
@@ -52,13 +53,6 @@ public class SoHookAccuracyTest {
             } else {
                 Log.e(TAG, "✗ Failed to load " + TARGET_LIB);
             }
-            
-            // 等待库完全加载
-            try {
-                Thread.sleep(200);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
         }
         
         // 每次都 Hook（bytehook 会处理重复 Hook）
@@ -70,24 +64,12 @@ public class SoHookAccuracyTest {
             Log.w(TAG, "Hook returned: " + hookResult + " (may already be hooked)");
         }
         
-        // 等待 Hook 完全生效（bytehook 异步执行）
-        Log.i(TAG, "Waiting for hook to take effect...");
-        try {
-            Thread.sleep(100);  // 增加到 1 秒
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-        
         // 测试 Hook 是否生效：分配一小块内存
         Log.i(TAG, "Testing if hook is active...");
         long testPtr = TestMemoryHelper.alloc(32);
-        try {
-            Thread.sleep(100);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
         SoHook.MemoryStats testStats = SoHook.getMemoryStats();
         Log.i(TAG, "Test allocation stats: totalAllocCount=" + testStats.totalAllocCount);
+        assertTrue("Total allocation should be greater than 0", testStats.totalAllocCount > 0);
         if (testPtr != 0) {
             TestMemoryHelper.free(testPtr);
         }
@@ -96,20 +78,19 @@ public class SoHookAccuracyTest {
         Log.i(TAG, "Resetting stats...");
         SoHook.resetStats();
         
-        // 再等待一下，确保重置生效
-        try {
-            Thread.sleep(100);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-        
         Log.i(TAG, "Test setup completed");
     }
 
     @After
     public void tearDown() {
+        Log.i(TAG, "Test tearDown: begin");
+        
+        // Unhook 所有库，避免测试用例之间互相影响
+        SoHook.unhookAll();
+        
         // 重置统计
         SoHook.resetStats();
+        
         Log.i(TAG, "Test teardown completed");
     }
 
@@ -155,22 +136,8 @@ public class SoHookAccuracyTest {
         long ptr2 = TestMemoryHelper.alloc(2048);
         long ptr3 = TestMemoryHelper.alloc(512);
         
-        // 等待
-        try {
-            Thread.sleep(100);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-        
         // 释放部分内存
         TestMemoryHelper.free(ptr1);
-        
-        // 等待
-        try {
-            Thread.sleep(50);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
         
         // 获取统计信息
         SoHook.MemoryStats stats = SoHook.getMemoryStats();
@@ -213,25 +180,11 @@ public class SoHookAccuracyTest {
         long ptr1 = TestMemoryHelper.alloc(512);
         long ptr2 = TestMemoryHelper.alloc(1024);
         
-        // 等待
-        try {
-            Thread.sleep(50);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-        
         // 获取第二次统计
         SoHook.MemoryStats stats2 = SoHook.getMemoryStats();
         
         // 再分配更多内存
         long ptr3 = TestMemoryHelper.alloc(2048);
-        
-        // 等待
-        try {
-            Thread.sleep(50);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
         
         // 获取第三次统计
         SoHook.MemoryStats stats3 = SoHook.getMemoryStats();
@@ -276,23 +229,9 @@ public class SoHookAccuracyTest {
         long ptr2 = TestMemoryHelper.leakMemory(2048);  // 故意泄漏
         long ptr3 = TestMemoryHelper.alloc(512);
         
-        // 等待
-        try {
-            Thread.sleep(100);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-        
         // 释放部分内存
         TestMemoryHelper.free(ptr1);
         TestMemoryHelper.free(ptr3);
-        
-        // 等待
-        try {
-            Thread.sleep(50);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
         
         // 获取统计信息
         SoHook.MemoryStats stats = SoHook.getMemoryStats();
@@ -359,13 +298,6 @@ public class SoHookAccuracyTest {
         long ptr2 = TestMemoryHelper.alloc(2048);
         long ptr3 = TestMemoryHelper.alloc(4096);
         
-        // 等待
-        try {
-            Thread.sleep(100);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-        
         // 分配后的统计
         SoHook.MemoryStats statsAfterAlloc = SoHook.getMemoryStats();
         
@@ -404,13 +336,6 @@ public class SoHookAccuracyTest {
         for (int i = 0; i < 10; i++) {
             // 分配内存
             long ptr = TestMemoryHelper.alloc(512 + i * 100);
-            
-            // 等待
-            try {
-                Thread.sleep(20);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
             
             // 获取统计
             SoHook.MemoryStats stats = SoHook.getMemoryStats();
@@ -456,23 +381,9 @@ public class SoHookAccuracyTest {
         long ptr3 = TestMemoryHelper.alloc(4096);
         long ptr4 = TestMemoryHelper.alloc(8192);
         
-        // 等待
-        try {
-            Thread.sleep(100);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-        
         // 释放部分内存
         TestMemoryHelper.free(ptr1);
         TestMemoryHelper.free(ptr3);
-        
-        // 等待
-        try {
-            Thread.sleep(50);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
         
         // 获取统计
         SoHook.MemoryStats stats = SoHook.getMemoryStats();
@@ -519,13 +430,6 @@ public class SoHookAccuracyTest {
         long ptr1 = TestMemoryHelper.alloc(1024);
         long ptr2 = TestMemoryHelper.leakMemory(2048);
         
-        // 等待
-        try {
-            Thread.sleep(100);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-        
         // 获取泄漏报告
         String report = SoHook.getLeakReport();
         
@@ -569,13 +473,6 @@ public class SoHookAccuracyTest {
         long ptr = TestMemoryHelper.alloc(1024);
         assertNotEquals("Allocation should succeed", 0, ptr);
         
-        // 等待统计更新
-        try {
-            Thread.sleep(50);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-        
         // 获取统计
         SoHook.MemoryStats stats = SoHook.getMemoryStats();
         
@@ -608,25 +505,11 @@ public class SoHookAccuracyTest {
         long ptr = TestMemoryHelper.alloc(2048);
         assertNotEquals("Allocation should succeed", 0, ptr);
         
-        // 等待
-        try {
-            Thread.sleep(50);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-        
         // 获取分配后的统计
         SoHook.MemoryStats statsAfterAlloc = SoHook.getMemoryStats();
         
         // 释放内存
         TestMemoryHelper.free(ptr);
-        
-        // 等待
-        try {
-            Thread.sleep(50);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
         
         // 获取释放后的统计
         SoHook.MemoryStats statsAfterFree = SoHook.getMemoryStats();
@@ -660,13 +543,6 @@ public class SoHookAccuracyTest {
         long size = 512;
         long ptr = TestMemoryHelper.allocMultiple(count, size);
         
-        // 等待
-        try {
-            Thread.sleep(100);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-        
         // 获取统计
         SoHook.MemoryStats stats = SoHook.getMemoryStats();
         Log.d(TAG, "stats.totalAllocCount "+ stats.totalAllocCount);
@@ -698,13 +574,6 @@ public class SoHookAccuracyTest {
         // 故意泄漏 4096 字节
         long leakedPtr = TestMemoryHelper.leakMemory(4096);
         assertNotEquals("Leak should succeed", 0, leakedPtr);
-        
-        // 等待
-        try {
-            Thread.sleep(100);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
         
         // 获取统计
         SoHook.MemoryStats stats = SoHook.getMemoryStats();
@@ -744,19 +613,7 @@ public class SoHookAccuracyTest {
             long ptr = TestMemoryHelper.alloc(1024);
             assertNotEquals("Allocation " + i + " should succeed", 0, ptr);
             
-            try {
-                Thread.sleep(20);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-            
             TestMemoryHelper.free(ptr);
-            
-            try {
-                Thread.sleep(20);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
         }
         
         // 获取统计

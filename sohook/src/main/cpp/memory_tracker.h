@@ -50,6 +50,12 @@ int memory_tracker_hook(const char **so_names, int count);
 int memory_tracker_unhook(const char **so_names, int count);
 
 /**
+ * 停止追踪所有已hook的so库
+ * @return 0表示成功，其他值表示失败
+ */
+int memory_tracker_unhook_all(void);
+
+/**
  * 获取内存泄漏报告
  * @return 报告字符串，调用者需要free
  */

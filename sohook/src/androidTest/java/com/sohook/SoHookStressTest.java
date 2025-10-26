@@ -41,7 +41,8 @@ public class SoHookStressTest {
 
     @After
     public void tearDown() {
-        SoHook.resetStats();
+        // Unhook 所有库，避免测试用例之间互相影响
+        SoHook.unhookAll();
         Log.i(TAG, "Test teardown completed");
     }
 

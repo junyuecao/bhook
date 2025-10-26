@@ -84,6 +84,19 @@ public class SoHook {
     }
 
     /**
+     * 停止对所有已hook的so库的内存监控
+     * @return 0表示成功，其他值表示失败
+     */
+    public static int unhookAll() {
+        if (!sInitialized) {
+            Log.e(TAG, "SoHook not initialized");
+            return -1;
+        }
+        Log.i(TAG, "Unhooking all libraries");
+        return nativeUnhookAll();
+    }
+
+    /**
      * 获取内存泄漏报告
      * @return 内存泄漏报告字符串
      */
@@ -165,6 +178,7 @@ public class SoHook {
     private static native int nativeInit(boolean debug, boolean enableBacktrace);
     private static native int nativeHook(String[] soNames);
     private static native int nativeUnhook(String[] soNames);
+    private static native int nativeUnhookAll();
     private static native String nativeGetLeakReport();
     private static native int nativeDumpLeakReport(String filePath);
     private static native MemoryStats nativeGetMemoryStats();

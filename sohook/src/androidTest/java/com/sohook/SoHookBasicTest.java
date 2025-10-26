@@ -29,6 +29,11 @@ public class SoHookBasicTest {
     public void setUp() {
         context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         Log.i(TAG, "Test setup completed");
+        // 检查测试库是否加载
+        if (!TestMemoryHelper.isLibraryLoaded()) {
+            Log.w(TAG, "test_memory library not loaded, some tests may be skipped");
+            return;
+        }
     }
 
     @After
@@ -71,7 +76,7 @@ public class SoHookBasicTest {
     public void testBacktraceFeature() {
         // 先确保已初始化
         SoHook.init(true);
-        
+
         // 测试启用栈回溯
         SoHook.setBacktraceEnabled(true);
         boolean enabled = SoHook.isBacktraceEnabled();
@@ -82,7 +87,7 @@ public class SoHookBasicTest {
         boolean disabled = !SoHook.isBacktraceEnabled();
         Log.d(TAG, "Backtrace disabled: " + disabled);
         assertTrue("Backtrace disable should work", disabled);
-        
+
         Log.i(TAG, "✓ Backtrace feature test passed");
     }
 
@@ -93,9 +98,9 @@ public class SoHookBasicTest {
     public void testDoubleInit() {
         int result1 = SoHook.init(true);
         assertTrue("First init should succeed", result1 == 0 || result1 == -2);
-        
+
         int result2 = SoHook.init(true);
-        assertTrue("Second init should succeed (already initialized)", 
+        assertTrue("Second init should succeed (already initialized)",
                    result2 == 0 || result2 == -2);
         Log.i(TAG, "✓ Double init test passed");
     }
@@ -107,11 +112,26 @@ public class SoHookBasicTest {
     @Test
     public void testHook() {
         SoHook.init(true);
-        
+
         // Hook 一个存在的系统库（只测试 API 是否工作）
-        int result = SoHook.hook(Collections.singletonList("libm.so"));
+        int result = SoHook.hook(Collections.singletonList("libtest_memory.so"));
         assertEquals("Hook should succeed", 0, result);
         Log.i(TAG, "✓ Hook test passed");
+
+        // 测试 Hook 是否生效：分配一小块内存
+        Log.i(TAG, "Testing if hook is active...");
+        long testPtr = TestMemoryHelper.alloc(32000);
+        try {
+            Thread.sleep(100);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        SoHook.MemoryStats testStats = SoHook.getMemoryStats();
+        Log.i(TAG, "Test allocation stats: totalAllocCount=" + testStats.totalAllocCount);
+        assertTrue("Total allocation should be greater than 0", testStats.totalAllocCount > 0);
+        if (testPtr != 0) {
+            TestMemoryHelper.free(testPtr);
+        }
     }
 
     /**
@@ -120,7 +140,7 @@ public class SoHookBasicTest {
     @Test
     public void testHookMultiple() {
         SoHook.init(true);
-        
+
         // Hook多个系统库（只测试 API 是否工作）
         int result = SoHook.hook(Arrays.asList("libm.so", "libdl.so", "liblog.so"));
         assertEquals("Hook multiple libraries should succeed", 0, result);
@@ -133,7 +153,7 @@ public class SoHookBasicTest {
     @Test
     public void testHookEmptyList() {
         SoHook.init(true);
-        
+
         int result = SoHook.hook(Collections.<String>emptyList());
         assertEquals("Hook empty list should fail", -1, result);
         Log.i(TAG, "✓ Hook empty list test passed");
@@ -145,23 +165,39 @@ public class SoHookBasicTest {
     @Test
     public void testHookNull() {
         SoHook.init(true);
-        
+
         int result = SoHook.hook(null);
         assertEquals("Hook null should fail", -1, result);
         Log.i(TAG, "✓ Hook null test passed");
     }
 
     /**
-     * 测试Unhook功能
+     * 测试 unhook 功能
      */
     @Test
     public void testUnhook() {
         SoHook.init(true);
         SoHook.hook(Collections.singletonList("libm.so"));
-        
+
         int result = SoHook.unhook(Collections.singletonList("libm.so"));
-        assertEquals("Unhook should succeed", 0, result);
+        assertTrue("Unhook should succeed", result == 0);
         Log.i(TAG, "✓ Unhook test passed");
+    }
+
+    /**
+     * 测试 unhookAll 功能
+     */
+    @Test
+    public void testUnhookAll() {
+        SoHook.init(true);
+
+        // Hook 多个库
+        SoHook.hook(Arrays.asList("libm.so", "libdl.so", "liblog.so"));
+
+        // Unhook 所有
+        int result = SoHook.unhookAll();
+        assertTrue("UnhookAll should succeed", result == 0);
+        Log.i(TAG, "✓ UnhookAll test passed");
     }
 
     /**
@@ -170,10 +206,10 @@ public class SoHookBasicTest {
     @Test
     public void testGetMemoryStats() {
         SoHook.init(true);
-        
+
         SoHook.MemoryStats stats = SoHook.getMemoryStats();
         assertNotNull("Stats should not be null", stats);
-        
+
         // 验证统计字段存在
         assertTrue("Total alloc count should be >= 0", stats.totalAllocCount >= 0);
         assertTrue("Total alloc size should be >= 0", stats.totalAllocSize >= 0);
@@ -181,7 +217,7 @@ public class SoHookBasicTest {
         assertTrue("Total free size should be >= 0", stats.totalFreeSize >= 0);
         assertTrue("Current alloc count should be >= 0", stats.currentAllocCount >= 0);
         assertTrue("Current alloc size should be >= 0", stats.currentAllocSize >= 0);
-        
+
         Log.i(TAG, "✓ Get memory stats test passed: " + stats);
     }
 
@@ -191,24 +227,24 @@ public class SoHookBasicTest {
     @Test
     public void testResetStats() {
         SoHook.init(true);
-        
+
         // 先获取统计信息
         SoHook.MemoryStats statsBefore = SoHook.getMemoryStats();
         assertNotNull("Stats before reset should not be null", statsBefore);
-        
+
         // 重置
         SoHook.resetStats();
-        
+
         // 再次获取统计信息
         SoHook.MemoryStats statsAfter = SoHook.getMemoryStats();
         assertNotNull("Stats after reset should not be null", statsAfter);
-        
+
         // 验证统计信息已重置
         assertEquals("Total alloc count should be 0 after reset", 0, statsAfter.totalAllocCount);
         assertEquals("Total alloc size should be 0 after reset", 0, statsAfter.totalAllocSize);
         assertEquals("Total free count should be 0 after reset", 0, statsAfter.totalFreeCount);
         assertEquals("Total free size should be 0 after reset", 0, statsAfter.totalFreeSize);
-        
+
         Log.i(TAG, "✓ Reset stats test passed");
     }
 
@@ -218,13 +254,13 @@ public class SoHookBasicTest {
     @Test
     public void testGetLeakReport() {
         SoHook.init(true);
-        
+
         String report = SoHook.getLeakReport();
         assertNotNull("Leak report should not be null", report);
         assertFalse("Leak report should not be empty", report.isEmpty());
-        assertTrue("Leak report should contain header", 
+        assertTrue("Leak report should contain header",
                    report.contains("Memory Leak Report"));
-        
+
         Log.i(TAG, "✓ Get leak report test passed");
         Log.d(TAG, "Leak report preview:\n" + report.substring(0, Math.min(200, report.length())));
     }
@@ -235,22 +271,22 @@ public class SoHookBasicTest {
     @Test
     public void testBacktraceToggle() {
         SoHook.init(true, false);
-        
+
         // 确保初始状态为禁用
         SoHook.setBacktraceEnabled(false);
-        assertFalse("Backtrace should be disabled initially", 
+        assertFalse("Backtrace should be disabled initially",
                     SoHook.isBacktraceEnabled());
-        
+
         // 启用栈回溯
         SoHook.setBacktraceEnabled(true);
-        assertTrue("Backtrace should be enabled after setBacktraceEnabled(true)", 
+        assertTrue("Backtrace should be enabled after setBacktraceEnabled(true)",
                    SoHook.isBacktraceEnabled());
-        
+
         // 禁用栈回溯
         SoHook.setBacktraceEnabled(false);
-        assertFalse("Backtrace should be disabled after setBacktraceEnabled(false)", 
+        assertFalse("Backtrace should be disabled after setBacktraceEnabled(false)",
                     SoHook.isBacktraceEnabled());
-        
+
         Log.i(TAG, "✓ Backtrace toggle test passed");
     }
 
@@ -260,13 +296,13 @@ public class SoHookBasicTest {
     @Test
     public void testMemoryStatsToString() {
         SoHook.MemoryStats stats = new SoHook.MemoryStats(100, 1024, 50, 512, 50, 512);
-        
+
         String str = stats.toString();
         assertNotNull("toString should not return null", str);
         assertTrue("toString should contain totalAllocCount", str.contains("totalAllocCount=100"));
         assertTrue("toString should contain totalAllocSize", str.contains("totalAllocSize=1024"));
         assertTrue("toString should contain currentAllocCount", str.contains("currentAllocCount=50"));
-        
+
         Log.i(TAG, "✓ MemoryStats toString test passed: " + str);
     }
 
@@ -277,13 +313,13 @@ public class SoHookBasicTest {
     public void testUninitializedAccess() {
         // 注意：由于static初始化，这个测试可能不会真正测试未初始化状态
         // 但我们仍然可以验证API不会崩溃
-        
+
         String report = SoHook.getLeakReport();
         assertNotNull("Leak report should not be null even if uninitialized", report);
-        
+
         SoHook.MemoryStats stats = SoHook.getMemoryStats();
         assertNotNull("Stats should not be null even if uninitialized", stats);
-        
+
         Log.i(TAG, "✓ Uninitialized access test passed");
     }
 }

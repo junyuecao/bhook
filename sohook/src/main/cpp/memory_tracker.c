@@ -190,6 +190,7 @@ int memory_tracker_init(bool debug, bool enable_backtrace) {
   if (enable_backtrace) {
     LOGW("Backtrace enabled - this will significantly impact performance!");
   }
+  bytehook_set_debug(debug);
 
   // 获取原始的malloc/free函数指针，用于内部分配
   original_malloc = dlsym(RTLD_DEFAULT, "malloc");
@@ -341,6 +342,44 @@ int memory_tracker_unhook(const char **so_names, int count) {
   pthread_mutex_unlock(&g_hook_mutex);
 
   LOGI("Unhooked memory tracking");
+  return 0;
+}
+
+// 停止追踪所有已hook的so库
+int memory_tracker_unhook_all(void) {
+  if (!g_initialized) {
+    LOGE("Memory tracker not initialized");
+    return -1;
+  }
+
+  pthread_mutex_lock(&g_hook_mutex);
+
+  LOGI("Unhooking all tracked libraries (count=%d)", g_hook_count);
+
+  // Unhook所有已注册的stubs
+  for (int i = 0; i < g_hook_count; i++) {
+    if (g_malloc_stubs[i] != NULL) {
+      bytehook_unhook(g_malloc_stubs[i]);
+      g_malloc_stubs[i] = NULL;
+    }
+    if (g_calloc_stubs[i] != NULL) {
+      bytehook_unhook(g_calloc_stubs[i]);
+      g_calloc_stubs[i] = NULL;
+    }
+    if (g_realloc_stubs[i] != NULL) {
+      bytehook_unhook(g_realloc_stubs[i]);
+      g_realloc_stubs[i] = NULL;
+    }
+    if (g_free_stubs[i] != NULL) {
+      bytehook_unhook(g_free_stubs[i]);
+      g_free_stubs[i] = NULL;
+    }
+  }
+
+  g_hook_count = 0;
+  pthread_mutex_unlock(&g_hook_mutex);
+
+  LOGI("All hooks removed successfully");
   return 0;
 }
 

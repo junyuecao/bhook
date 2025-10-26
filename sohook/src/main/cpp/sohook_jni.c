@@ -121,6 +121,14 @@ static jint sohook_jni_unhook(JNIEnv *env, jclass clazz, jobjectArray so_names) 
   return ret;
 }
 
+// Native method: unhookAll
+static jint sohook_jni_unhook_all(JNIEnv *env, jclass clazz) {
+  (void)env;
+  (void)clazz;
+
+  return memory_tracker_unhook_all();
+}
+
 // Native method: getLeakReport
 static jstring sohook_jni_get_leak_report(JNIEnv *env, jclass clazz) {
   (void)clazz;
@@ -239,6 +247,7 @@ static JNINativeMethod sohook_jni_methods[] = {
     {"nativeInit", "(ZZ)I", (void *)sohook_jni_init},
     {"nativeHook", "([Ljava/lang/String;)I", (void *)sohook_jni_hook},
     {"nativeUnhook", "([Ljava/lang/String;)I", (void *)sohook_jni_unhook},
+    {"nativeUnhookAll", "()I", (void *)sohook_jni_unhook_all},
     {"nativeGetLeakReport", "()Ljava/lang/String;", (void *)sohook_jni_get_leak_report},
     {"nativeDumpLeakReport", "(Ljava/lang/String;)I", (void *)sohook_jni_dump_leak_report},
     {"nativeGetMemoryStats", "()Lcom/sohook/SoHook$MemoryStats;",
