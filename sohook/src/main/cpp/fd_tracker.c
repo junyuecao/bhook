@@ -495,8 +495,20 @@ void fd_tracker_get_stats(fd_stats_t *stats) {
 
 void fd_tracker_reset_stats(void) {
   pthread_mutex_lock(&g_mutex);
+  
+  // 清空所有FD记录
+  fd_record_t *curr = g_fd_list;
+  while (curr != NULL) {
+    fd_record_t *next = curr->next;
+    free(curr);
+    curr = next;
+  }
+  g_fd_list = NULL;
+  
+  // 重置统计信息
   memset(&g_stats, 0, sizeof(fd_stats_t));
-  LOGI("FD stats reset");
+  
+  LOGI("FD stats and records reset");
   pthread_mutex_unlock(&g_mutex);
 }
 
