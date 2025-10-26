@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, memo } from 'react';
 import type { MemoryRecord } from '../types/index';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
@@ -91,26 +91,10 @@ function LeakItem({ leak }: { leak: MemoryRecord }) {
   );
 }
 
-export function LeaksList({ leaks, isLoading }: LeaksListProps) {
-  if (isLoading) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5" />
-            内存泄漏列表
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-center py-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  const totalSize = leaks.reduce((sum, leak) => sum + leak.size, 0);
+const LeaksListComponent = ({ leaks, isLoading }: LeaksListProps) => {
+  // 始终显示列表，不管是否在加载
+  const displayLeaks = leaks || [];
+  const totalSize = displayLeaks.reduce((sum, leak) => sum + leak.size, 0);
 
   return (
     <Card>
@@ -121,8 +105,8 @@ export function LeaksList({ leaks, isLoading }: LeaksListProps) {
             内存泄漏列表
           </span>
           <div className="flex items-center gap-2">
-            <Badge variant={leaks.length > 0 ? 'destructive' : 'secondary'}>
-              {leaks.length} 个泄漏
+            <Badge variant={displayLeaks.length > 0 ? 'destructive' : 'secondary'}>
+              {displayLeaks.length} 个泄漏
             </Badge>
             {totalSize > 0 && (
               <Badge variant="outline">{formatBytes(totalSize)}</Badge>
@@ -131,14 +115,14 @@ export function LeaksList({ leaks, isLoading }: LeaksListProps) {
         </CardTitle>
       </CardHeader>
       <CardContent>
-        {leaks.length === 0 ? (
+        {displayLeaks.length === 0 ? (
           <div className="text-center py-8 text-gray-600">
             <p className="text-lg mb-2">🎉 太棒了！</p>
             <p>未检测到内存泄漏</p>
           </div>
         ) : (
           <div className="space-y-3 max-h-[600px] overflow-y-auto">
-            {leaks.map((leak, idx) => (
+            {displayLeaks.map((leak, idx) => (
               <LeakItem key={`${leak.ptr}-${idx}`} leak={leak} />
             ))}
           </div>
@@ -146,4 +130,29 @@ export function LeaksList({ leaks, isLoading }: LeaksListProps) {
       </CardContent>
     </Card>
   );
-}
+};
+
+// 使用 memo 优化，只在 leaks 数组真正变化时才重新渲染
+export const LeaksList = memo(LeaksListComponent, (prevProps, nextProps) => {
+  // 如果 loading 状态变化，不需要重新渲染（因为我们不显示 loading 状态）
+  
+  // 如果数组长度不同，需要重新渲染
+  if (prevProps.leaks.length !== nextProps.leaks.length) {
+    return false;
+  }
+  
+  // 如果长度相同但都为 0，不需要重新渲染
+  if (prevProps.leaks.length === 0 && nextProps.leaks.length === 0) {
+    return true;
+  }
+  
+  // 比较数组内容（简单比较指针地址）
+  for (let i = 0; i < prevProps.leaks.length; i++) {
+    if (prevProps.leaks[i].ptr !== nextProps.leaks[i].ptr ||
+        prevProps.leaks[i].size !== nextProps.leaks[i].size) {
+      return false;
+    }
+  }
+  
+  return true;
+});

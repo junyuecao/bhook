@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import type { MemoryStats, MemoryRecord } from '../types/index';
 import { apiClient } from '../services/api';
 
@@ -23,22 +24,44 @@ interface MemoryStore {
   setRefreshInterval: (interval: number) => void;
 }
 
-export const useMemoryStore = create<MemoryStore>((set, get) => ({
-  // 初始状态
-  stats: null,
-  leaks: [],
-  isConnected: false,
-  isLoading: false,
-  error: null,
-  serverUrl: 'http://localhost:8080',
-  autoRefresh: true,
-  refreshInterval: 2000, // 默认 2 秒刷新一次
+// 从 localStorage 读取保存的服务器地址
+const getSavedServerUrl = () => {
+  try {
+    return localStorage.getItem('sohook-server-url') || 'http://localhost:8080';
+  } catch {
+    return 'http://localhost:8080';
+  }
+};
 
-  // 设置服务器地址
-  setServerUrl: (url: string) => {
-    apiClient.setBaseUrl(url);
-    set({ serverUrl: url });
-  },
+export const useMemoryStore = create<MemoryStore>()(
+  persist(
+    (set, get) => {
+      // 初始化时设置 apiClient 的 baseUrl
+      const savedUrl = getSavedServerUrl();
+      apiClient.setBaseUrl(savedUrl);
+      
+      return {
+        // 初始状态
+        stats: null,
+        leaks: [],
+        isConnected: false,
+        isLoading: false,
+        error: null,
+        serverUrl: savedUrl,
+        autoRefresh: true,
+        refreshInterval: 2000, // 默认 2 秒刷新一次
+
+      // 设置服务器地址
+      setServerUrl: (url: string) => {
+        apiClient.setBaseUrl(url);
+        // 保存到 localStorage
+        try {
+          localStorage.setItem('sohook-server-url', url);
+        } catch (e) {
+          console.error('Failed to save server URL:', e);
+        }
+        set({ serverUrl: url });
+      },
 
   // 获取内存统计
   fetchStats: async () => {
@@ -105,4 +128,15 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
   setRefreshInterval: (interval: number) => {
     set({ refreshInterval: interval });
   },
-}));
+      };
+    },
+    {
+      name: 'sohook-storage', // localStorage key
+      partialize: (state) => ({
+        serverUrl: state.serverUrl,
+        autoRefresh: state.autoRefresh,
+        refreshInterval: state.refreshInterval,
+      }),
+    }
+  )
+);
