@@ -1,73 +1,59 @@
-# React + TypeScript + Vite
+# SoHook Web Dashboard
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+实时监控 Android 应用内存泄漏的 Web 可视化平台。
 
-Currently, two official plugins are available:
+## 功能特性
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- 📊 **实时内存统计** - 6 项关键指标实时展示
+- 📈 **内存趋势图** - 可视化内存变化趋势
+- 🔍 **泄漏详情** - 详细的泄漏列表和调用栈
+- 🔄 **自动刷新** - 每 2 秒自动更新数据
+- 💻 **现代化 UI** - 基于 React 19 + TailwindCSS
 
-## React Compiler
+## 快速开始
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### 1. 安装依赖
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+### 2. 启动开发服务器
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run dev
 ```
+
+访问 http://localhost:5173
+
+### 3. 连接 Android 设备
+
+1. 确保 Android 应用已启动 SoHook Web 服务器
+2. 在 Web Dashboard 中输入设备 IP 地址
+3. 点击"测试连接"
+
+## 技术栈
+
+- **React 19** - UI 框架
+- **TypeScript** - 类型安全
+- **Vite** - 构建工具
+- **TailwindCSS** - 样式框架
+- **Zustand** - 状态管理
+- **Recharts** - 图表库
+- **Axios** - HTTP 客户端
+
+## 文档
+
+- 📖 [功能说明](./README_MONITOR.md)
+- 🚀 [快速开始](docs/QUICK_START_WEB_MONITOR.md)
+- 📊 [实现总结](./IMPLEMENTATION_SUMMARY.md)
+- 🎯 [项目总览](./PROJECT_OVERVIEW.md)
+- 🎬 [演示指南](./DEMO_GUIDE.md)
+
+## 构建
+
+```bash
+npm run build
+```
+
+构建产物在 `dist/` 目录。

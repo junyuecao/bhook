@@ -242,6 +242,20 @@ static jboolean sohook_jni_is_backtrace_enabled(JNIEnv *env, jclass clazz) {
   return (jboolean)memory_tracker_is_backtrace_enabled();
 }
 
+// Native method: get leaks json
+static jstring sohook_jni_get_leaks_json(JNIEnv *env, jclass clazz) {
+  (void)clazz;
+
+  char *json = memory_tracker_get_leaks_json();
+  if (json == NULL) {
+    return (*env)->NewStringUTF(env, "[]");
+  }
+
+  jstring jjson = (*env)->NewStringUTF(env, json);
+  free(json);
+  return jjson;
+}
+
 // JNI方法注册表
 static JNINativeMethod sohook_jni_methods[] = {
     {"nativeInit", "(ZZ)I", (void *)sohook_jni_init},
@@ -254,7 +268,8 @@ static JNINativeMethod sohook_jni_methods[] = {
      (void *)sohook_jni_get_memory_stats},
     {"nativeResetStats", "()V", (void *)sohook_jni_reset_stats},
     {"nativeSetBacktraceEnabled", "(Z)V", (void *)sohook_jni_set_backtrace_enabled},
-    {"nativeIsBacktraceEnabled", "()Z", (void *)sohook_jni_is_backtrace_enabled}};
+    {"nativeIsBacktraceEnabled", "()Z", (void *)sohook_jni_is_backtrace_enabled},
+    {"nativeGetLeaksJson", "()Ljava/lang/String;", (void *)sohook_jni_get_leaks_json}};
 
 // JNI_OnLoad
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {

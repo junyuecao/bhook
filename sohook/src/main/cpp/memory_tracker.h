@@ -93,6 +93,12 @@ void memory_tracker_set_backtrace_enabled(bool enable);
 bool memory_tracker_is_backtrace_enabled(void);
 
 /**
+ * 获取内存泄漏列表（JSON 格式）
+ * @return JSON 字符串，调用者需要 free
+ */
+char *memory_tracker_get_leaks_json(void);
+
+/**
  * malloc的hook函数
  */
 void *malloc_proxy(size_t size);

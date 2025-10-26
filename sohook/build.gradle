@@ -61,6 +61,12 @@ dependencies {
     // 依赖bytehook库
     implementation project(':bytehook')
     
+    // NanoHTTPD - 轻量级 HTTP 服务器
+    implementation 'org.nanohttpd:nanohttpd:2.3.1'
+    
+    // JSON 处理
+    implementation 'com.google.code.gson:gson:2.10.1'
+    
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'

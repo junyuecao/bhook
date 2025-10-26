@@ -448,3 +448,88 @@ void memory_tracker_set_backtrace_enabled(bool enable) {
 bool memory_tracker_is_backtrace_enabled(void) {
   return g_backtrace_enabled;
 }
+
+// 获取内存泄漏列表（JSON 格式）
+char *memory_tracker_get_leaks_json(void) {
+  if (!g_initialized) {
+    LOGE("Memory tracker not initialized");
+    return NULL;
+  }
+
+  // 初始缓冲区大小
+  size_t buffer_size = 4096;
+  size_t buffer_used = 0;
+  char *buffer = (char *)original_malloc(buffer_size);
+  if (buffer == NULL) {
+    LOGE("Failed to allocate buffer for JSON");
+    return NULL;
+  }
+
+  // 开始 JSON 数组
+  buffer_used += snprintf(buffer + buffer_used, buffer_size - buffer_used, "[");
+
+  // 遍历哈希表获取所有泄漏记录
+  int leak_count = 0;
+  for (int i = 0; i < HASH_TABLE_SIZE; i++) {
+    memory_record_t *record = hash_table_get_bucket(i);
+    while (record != NULL) {
+      // 检查缓冲区空间
+      if (buffer_used + 512 > buffer_size) {
+        buffer_size *= 2;
+        char *new_buffer = (char *)original_malloc(buffer_size);
+        if (new_buffer == NULL) {
+          original_free(buffer);
+          return NULL;
+        }
+        memcpy(new_buffer, buffer, buffer_used);
+        original_free(buffer);
+        buffer = new_buffer;
+      }
+
+      // 添加逗号分隔符
+      if (leak_count > 0) {
+        buffer_used += snprintf(buffer + buffer_used, buffer_size - buffer_used, ",");
+      }
+
+      // 添加记录
+      buffer_used += snprintf(buffer + buffer_used, buffer_size - buffer_used,
+                              "{\"ptr\":\"%p\",\"size\":%zu,\"timestamp\":0,\"backtrace\":[",
+                              record->ptr, record->size);
+
+      // 添加调用栈
+      if (g_backtrace_enabled && record->backtrace_size > 0) {
+        for (int j = 0; j < record->backtrace_size; j++) {
+          if (j > 0) {
+            buffer_used += snprintf(buffer + buffer_used, buffer_size - buffer_used, ",");
+          }
+          
+          // 获取符号信息
+          Dl_info info;
+          if (dladdr(record->backtrace[j], &info) && info.dli_sname) {
+            buffer_used += snprintf(buffer + buffer_used, buffer_size - buffer_used,
+                                    "\"%s+%ld\"",
+                                    info.dli_sname,
+                                    (long)((char *)record->backtrace[j] - (char *)info.dli_saddr));
+          } else {
+            buffer_used += snprintf(buffer + buffer_used, buffer_size - buffer_used,
+                                    "\"%p\"", record->backtrace[j]);
+          }
+        }
+      }
+
+      buffer_used += snprintf(buffer + buffer_used, buffer_size - buffer_used, "]}");
+      leak_count++;
+
+      record = record->next;
+    }
+  }
+
+  // 结束 JSON 数组
+  buffer_used += snprintf(buffer + buffer_used, buffer_size - buffer_used, "]");
+
+  if (g_debug) {
+    LOGD("Generated JSON with %d leaks, size=%zu", leak_count, buffer_used);
+  }
+
+  return buffer;
+}

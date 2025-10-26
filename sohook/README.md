@@ -13,6 +13,7 @@ SoHook是一个基于ByteHook的Android内存泄漏检测库，可以监控指�
 - ✅ 支持导出报告到文件
 - ✅ 支持调试模式
 - ✅ **性能测试套件** - 评估和优化追踪性能
+- ✅ **Web 可视化监控** 🆕 - 通过浏览器实时查看内存泄漏数据
 
 ## 快速开始
 
@@ -134,6 +135,34 @@ SoHook.MemoryStats stats = SoHook.getMemoryStats();
 - 🔧 [优化计划](./OPTIMIZATION_PLAN.md) - 性能优化指南
 - 🔄 [重构说明](./PERF_TEST_REFACTOR.md) - 重构详情
 
+### 8. Web 可视化监控 🆕
+
+通过 Web 界面实时查看内存泄漏数据：
+
+```java
+// 初始化并启动 Web 服务器
+SoHook.init(true);
+SoHook.startWebServer(8080);  // 启动在端口 8080
+
+// 开始监控
+SoHook.hook(Arrays.asList("libnative-lib.so"));
+
+// 在浏览器中访问 Web Dashboard
+// http://<设备IP>:8080
+```
+
+**Web 监控功能**：
+- 📊 实时内存统计展示
+- 📈 内存趋势图表
+- 🔍 泄漏详情和调用栈
+- 🔄 自动刷新数据
+- 💻 现代化 Web UI
+
+**快速开始**：
+- 🚀 [5分钟快速开始](../QUICK_START_WEB_MONITOR.md)
+- 📖 [详细使用文档](../sohook-web/docs/WEB_SERVER_USAGE.md)
+- 📊 [实现总结](../sohook-web/IMPLEMENTATION_SUMMARY.md)
+
 ## API文档
 
 ### SoHook类
@@ -149,6 +178,10 @@ SoHook.MemoryStats stats = SoHook.getMemoryStats();
 | `dumpLeakReport(String filePath)` | 导出报告到文件 | filePath: 文件路径 | 0表示成功，其他值表示失败 |
 | `getMemoryStats()` | 获取内存统计信息 | 无 | MemoryStats对象 |
 | `resetStats()` | 重置统计信息 | 无 | 无 |
+| `startWebServer(int port)` 🆕 | 启动 Web 服务器 | port: 端口号 | true表示成功，false表示失败 |
+| `startWebServer()` 🆕 | 启动 Web 服务器（默认8080） | 无 | true表示成功，false表示失败 |
+| `stopWebServer()` 🆕 | 停止 Web 服务器 | 无 | 无 |
+| `isWebServerRunning()` 🆕 | 检查服务器是否运行 | 无 | true表示运行中，false表示未运行 |
 
 ### MemoryStats类
 
