@@ -21,6 +21,10 @@ void sample_alloc_object_arrays(int count);
 void sample_run_perf_tests(void);
 void sample_quick_benchmark(int iterations);
 
+// FD 泄漏测试函数
+void sample_leak_file_descriptors(int count, const char *path_prefix);
+void sample_leak_file_pointers(int count, const char *path_prefix);
+
 #ifdef __cplusplus
 }
 #endif

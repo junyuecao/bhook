@@ -3,6 +3,7 @@
 #include <android/log.h>
 #include <dlfcn.h>
 #include <fcntl.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -442,6 +443,52 @@ void sample_run_perf_tests(void) {
   PERF_LOGI("");
   PERF_LOGI("All allocations were tracked by SoHook.");
   PERF_LOGI("Check memory stats to see the results.");
+}
+#pragma clang optimize on
+
+// FD泄漏测试函数
+#pragma clang optimize off
+void sample_leak_file_descriptors(int count, const char *path_prefix) {
+  LOGI("sample_leak_file_descriptors: leaking %d file descriptors", count);
+  
+  for (int i = 0; i < count; i++) {
+    char path[256];
+    snprintf(path, sizeof(path), "%s_open_%d.tmp", path_prefix, i);
+    
+    // 使用open打开文件但不关闭（故意泄漏）
+    int fd = open(path, O_CREAT | O_WRONLY | O_TRUNC, 0644);
+    if (fd >= 0) {
+      // 写入一些数据
+      const char *data = "FD leak test data\n";
+      write(fd, data, strlen(data));
+      // 故意不调用 close(fd)，造成泄漏
+      LOGI("Leaked FD %d for file: %s", fd, path);
+    } else {
+      LOGE("Failed to open file: %s", path);
+    }
+  }
+}
+
+void sample_leak_file_pointers(int count, const char *path_prefix) {
+  LOGI("sample_leak_file_pointers: leaking %d FILE pointers", count);
+  
+  for (int i = 0; i < count; i++) {
+    char path[256];
+    snprintf(path, sizeof(path), "%s_fopen_%d.tmp", path_prefix, i);
+    
+    // 使用fopen打开文件但不关闭（故意泄漏）
+    FILE *fp = fopen(path, "w");
+    if (fp != NULL) {
+      // 写入一些数据
+      fprintf(fp, "FILE* leak test data\n");
+      fflush(fp);
+      // 故意不调用 fclose(fp)，造成泄漏
+      int fd = fileno(fp);
+      LOGI("Leaked FILE* (FD %d) for file: %s", fd, path);
+    } else {
+      LOGE("Failed to fopen file: %s", path);
+    }
+  }
 }
 #pragma clang optimize on
 

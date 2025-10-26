@@ -17,6 +17,8 @@
 #define HACKER_JNI_VERSION    JNI_VERSION_1_6
 #define HACKER_JNI_CLASS_NAME "com/bytedance/android/bytehook/sample/NativeHacker"
 
+// 需要被监控的函数必须放到sample.cpp里实现，hacker.c里的调用代码不会
+
 static int hacker_jni_bytehook_hook(JNIEnv *env, jobject thiz) {
   (void)env;
   (void)thiz;
@@ -61,6 +63,9 @@ typedef void (*sample_alloc_with_new_t)(int);
 typedef void (*sample_alloc_with_new_array_t)(int);
 typedef void (*sample_alloc_objects_t)(int);
 typedef void (*sample_alloc_object_arrays_t)(int);
+// FD 泄漏测试函数类型
+typedef void (*sample_leak_file_descriptors_t)(int, const char *);
+typedef void (*sample_leak_file_pointers_t)(int, const char *);
 
 static sample_test_strlen_t sample_test_strlen = NULL;
 static sample_alloc_memory_t sample_alloc_memory = NULL;
@@ -73,6 +78,9 @@ static sample_alloc_with_new_t sample_alloc_with_new = NULL;
 static sample_alloc_with_new_array_t sample_alloc_with_new_array = NULL;
 static sample_alloc_objects_t sample_alloc_objects = NULL;
 static sample_alloc_object_arrays_t sample_alloc_object_arrays = NULL;
+// FD 泄漏测试函数指针
+static sample_leak_file_descriptors_t sample_leak_file_descriptors = NULL;
+static sample_leak_file_pointers_t sample_leak_file_pointers = NULL;
 
 static void hacker_jni_do_dlopen(JNIEnv *env, jobject thiz) {
   (void)env;
@@ -95,6 +103,9 @@ static void hacker_jni_do_dlopen(JNIEnv *env, jobject thiz) {
       sample_alloc_objects = (sample_alloc_objects_t)dlsym(libsample_handle, "sample_alloc_objects");
       sample_alloc_object_arrays = (sample_alloc_object_arrays_t)dlsym(libsample_handle, "sample_alloc_object_arrays");
       sample_quick_benchmark = (sample_quick_benchmark_t)dlsym(libsample_handle, "sample_quick_benchmark");
+      // 加载 FD 泄漏测试函数
+      sample_leak_file_descriptors = (sample_leak_file_descriptors_t)dlsym(libsample_handle, "sample_leak_file_descriptors");
+      sample_leak_file_pointers = (sample_leak_file_pointers_t)dlsym(libsample_handle, "sample_leak_file_pointers");
     }
   }
 }
@@ -177,19 +188,9 @@ static void hacker_jni_leak_file_descriptors(JNIEnv *env, jobject thiz, jint cou
   const char *c_path_prefix = (*env)->GetStringUTFChars(env, pathPrefix, 0);
   if (NULL == c_path_prefix) return;
 
-  for (int i = 0; i < count; i++) {
-    char path[256];
-    snprintf(path, sizeof(path), "%s_open_%d.tmp", c_path_prefix, i);
-    
-    // 使用open打开文件但不关闭（故意泄漏）
-    int fd = open(path, O_CREAT | O_WRONLY | O_TRUNC, 0644);
-    if (fd >= 0) {
-      // 写入一些数据
-      const char *data = "FD leak test data\n";
-      write(fd, data, strlen(data));
-      // 故意不调用 close(fd)，造成泄漏
-      __android_log_print(ANDROID_LOG_INFO, "NativeHacker", "Leaked FD %d for file: %s", fd, path);
-    }
+  // 调用 sample.so 中的函数（会被 hook）
+  if (NULL != sample_leak_file_descriptors) {
+    sample_leak_file_descriptors(count, c_path_prefix);
   }
 
   (*env)->ReleaseStringUTFChars(env, pathPrefix, c_path_prefix);
@@ -201,20 +202,9 @@ static void hacker_jni_leak_file_pointers(JNIEnv *env, jobject thiz, jint count,
   const char *c_path_prefix = (*env)->GetStringUTFChars(env, pathPrefix, 0);
   if (NULL == c_path_prefix) return;
 
-  for (int i = 0; i < count; i++) {
-    char path[256];
-    snprintf(path, sizeof(path), "%s_fopen_%d.tmp", c_path_prefix, i);
-    
-    // 使用fopen打开文件但不关闭（故意泄漏）
-    FILE *fp = fopen(path, "w");
-    if (fp != NULL) {
-      // 写入一些数据
-      fprintf(fp, "FILE* leak test data\n");
-      fflush(fp);
-      // 故意不调用 fclose(fp)，造成泄漏
-      int fd = fileno(fp);
-      __android_log_print(ANDROID_LOG_INFO, "NativeHacker", "Leaked FILE* (FD %d) for file: %s", fd, path);
-    }
+  // 调用 sample.so 中的函数（会被 hook）
+  if (NULL != sample_leak_file_pointers) {
+    sample_leak_file_pointers(count, c_path_prefix);
   }
 
   (*env)->ReleaseStringUTFChars(env, pathPrefix, c_path_prefix);
@@ -238,6 +228,8 @@ static void hacker_jni_do_dlclose(JNIEnv *env, jobject thiz) {
     sample_alloc_with_new_array = NULL;
     sample_alloc_objects = NULL;
     sample_alloc_object_arrays = NULL;
+    sample_leak_file_descriptors = NULL;
+    sample_leak_file_pointers = NULL;
     dlclose(libsample_handle);
     libsample_handle = NULL;
   }
