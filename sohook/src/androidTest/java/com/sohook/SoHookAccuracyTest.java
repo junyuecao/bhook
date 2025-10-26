@@ -23,9 +23,10 @@ import static org.junit.Assert.*;
  */
 @RunWith(AndroidJUnit4.class)
 public class SoHookAccuracyTest {
-    private static final String TAG = "SoHookAccuracyTest";
+    private static final String TAG = "SoHook-AccuracyTest";
+    private static final String TARGET_LIB = "libtest_memory.so";
     private Context context;
-    private static boolean sHookInitialized = false;
+    private static boolean sLibraryPreloaded = false;
 
     @Before
     public void setUp() {
@@ -40,54 +41,69 @@ public class SoHookAccuracyTest {
         // 初始化 SoHook
         SoHook.init(true);
         
-        // Hook libc.so（只 Hook 一次）
-        // 注意：虽然我们使用 libtest_memory.so 来分配内存，但最终调用的是 libc.so 的 malloc
-        // 所以我们 Hook libc.so 来捕获所有内存操作
-        if (!sHookInitialized) {
-            Log.i(TAG, "=== Starting Hook Process ===");
-            
-            // 等待一小段时间，确保之前的测试完成
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-            
-            // Hook libc.so
-            Log.i(TAG, "Attempting to hook libc.so...");
-            int hookResult = SoHook.hook(Collections.singletonList("libc.so"));
-            Log.i(TAG, "Hook result: " + hookResult);
-            
-            if (hookResult == 0) {
-                sHookInitialized = true;
-                Log.i(TAG, "✓ Hooked libc.so successfully");
+        // 预加载库（只需要一次）
+        if (!sLibraryPreloaded) {
+            Log.i(TAG, "Pre-loading " + TARGET_LIB + "...");
+            long preloadPtr = TestMemoryHelper.alloc(16);
+            if (preloadPtr != 0) {
+                TestMemoryHelper.free(preloadPtr);
+                Log.i(TAG, "✓ " + TARGET_LIB + " loaded successfully");
+                sLibraryPreloaded = true;
             } else {
-                Log.e(TAG, "✗ Failed to hook libc.so, result: " + hookResult);
+                Log.e(TAG, "✗ Failed to load " + TARGET_LIB);
             }
             
-            // Hook 后等待一下，确保 Hook 生效
+            // 等待库完全加载
             try {
-                Thread.sleep(100);
+                Thread.sleep(200);
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
-            
-            Log.i(TAG, "=== Hook Process Completed ===");
-        } else {
-            Log.i(TAG, "Hook already initialized, skipping");
         }
         
-        // 重置统计（在 Hook 之后）
-        SoHook.resetStats();
+        // 每次都 Hook（bytehook 会处理重复 Hook）
+        Log.i(TAG, "Hooking " + TARGET_LIB + "...");
+        int hookResult = SoHook.hook(Collections.singletonList(TARGET_LIB));
+        if (hookResult == 0) {
+            Log.i(TAG, "✓ Hook API returned success");
+        } else {
+            Log.w(TAG, "Hook returned: " + hookResult + " (may already be hooked)");
+        }
         
-        // 再等待一下，确保重置生效
+        // 等待 Hook 完全生效（bytehook 异步执行）
+        Log.i(TAG, "Waiting for hook to take effect...");
         try {
-            Thread.sleep(50);
+            Thread.sleep(100);  // 增加到 1 秒
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
         
-        Log.i(TAG, "Test setup completed (hook initialized: " + sHookInitialized + ")");
+        // 测试 Hook 是否生效：分配一小块内存
+        Log.i(TAG, "Testing if hook is active...");
+        long testPtr = TestMemoryHelper.alloc(32);
+        try {
+            Thread.sleep(100);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        SoHook.MemoryStats testStats = SoHook.getMemoryStats();
+        Log.i(TAG, "Test allocation stats: totalAllocCount=" + testStats.totalAllocCount);
+        if (testPtr != 0) {
+            TestMemoryHelper.free(testPtr);
+        }
+        
+        // 重置统计（在 Hook 之后）
+        Log.i(TAG, "Resetting stats...");
+        SoHook.resetStats();
+        
+        // 再等待一下，确保重置生效
+        try {
+            Thread.sleep(100);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        
+        Log.i(TAG, "Test setup completed");
     }
 
     @After
@@ -638,9 +654,6 @@ public class SoHookAccuracyTest {
             Log.w(TAG, "Skipping test: test_memory library not loaded");
             return;
         }
-        
-        // 重置统计
-        SoHook.resetStats();
         
         // 分配 10 次，每次 512 字节
         int count = 10;

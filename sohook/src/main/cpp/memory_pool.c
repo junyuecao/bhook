@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define LOG_TAG "MemoryPool"
+#define LOG_TAG "SoHook-MemoryPool"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
 // 内存池配置

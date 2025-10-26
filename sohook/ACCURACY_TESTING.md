@@ -44,22 +44,23 @@ malloc_proxy 记录统计
 ```
 
 **SoHook Hook 机制**：
-1. **Hook `libc.so`**：修改调用者（如 libtest_memory.so）的 PLT，将对 libc.so 的 malloc/free 调用重定向
-2. **PLT 重定向**：调用被重定向到 `malloc_proxy/free_proxy`
+1. **Hook `libtest_memory.so`**：修改该库的 PLT，将对 malloc/free 的调用重定向
+2. **PLT 重定向**：`libtest_memory.so` 调用 malloc 时，被重定向到 `malloc_proxy`
 3. **统计记录**：proxy 函数记录分配信息后，调用真正的 `malloc/free`
-4. **捕获范围**：捕获所有通过 libc.so 的内存操作
+4. **精确捕获**：只捕获通过 `libtest_memory.so` 的内存操作，避免系统噪音
 
-**实际实现**：
-- 虽然我们创建了 `libtest_memory.so`，但它内部调用的是 `libc.so` 的 `malloc/free`
-- 因此需要 Hook `libc.so` 而不是 `libtest_memory.so`
-- 通过 TestMemoryHelper 控制内存操作，确保测试的可控性
-- 在测试前后 `resetStats()` 来隔离测试，减少系统噪音影响
+**关键步骤**：
+1. **预加载库**：在 Hook 之前先调用 `TestMemoryHelper.alloc(16)` 确保库已加载
+2. **Hook 目标库**：`SoHook.hook("libtest_memory.so")` 修改其 PLT
+3. **等待生效**：Hook 后等待 200ms 确保修改完成
+4. **隔离测试**：每个测试前 `resetStats()` 清零统计
 
 **优势**：
+- **精确性**：只捕获测试库的内存操作，无系统噪音
 - **可控性**：通过 TestMemoryHelper 精确控制分配/释放时机和大小
 - **可预测**：知道确切分配了多少次、多少字节
 - **可重复**：测试结果稳定可重复
-- **隔离性**：通过 resetStats() 隔离每个测试
+- **隔离性**：不受其他库（如 libc.so）的系统调用影响
 
 ---
 

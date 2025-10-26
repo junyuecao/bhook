@@ -5,7 +5,7 @@
 #include <android/log.h>
 #include "test_memory.h"
 
-#define LOG_TAG "TestMemoryJNI"
+#define LOG_TAG "SoHook-TestMemoryJNI"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
 
 // JNI: 分配内存

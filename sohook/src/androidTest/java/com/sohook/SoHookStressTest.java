@@ -28,7 +28,7 @@ import static org.junit.Assert.*;
  */
 @RunWith(AndroidJUnit4.class)
 public class SoHookStressTest {
-    private static final String TAG = "SoHookStressTest";
+    private static final String TAG = "SoHook-StressTest";
     private Context context;
 
     @Before
@@ -47,16 +47,17 @@ public class SoHookStressTest {
 
     /**
      * 测试连续多次Hook和Unhook
+     * 注意：此测试只验证 API 的稳定性，不验证实际捕获
      */
     @Test
     public void testRepeatedHookUnhook() {
         final int iterations = 10;
         
         for (int i = 0; i < iterations; i++) {
-            int hookResult = SoHook.hook(Collections.singletonList("libc.so"));
+            int hookResult = SoHook.hook(Collections.singletonList("libm.so"));
             assertEquals("Hook iteration " + i + " should succeed", 0, hookResult);
             
-            int unhookResult = SoHook.unhook(Collections.singletonList("libc.so"));
+            int unhookResult = SoHook.unhook(Collections.singletonList("libm.so"));
             assertEquals("Unhook iteration " + i + " should succeed", 0, unhookResult);
         }
         
@@ -201,6 +202,7 @@ public class SoHookStressTest {
 
     /**
      * 测试多线程并发Hook
+     * 注意：此测试只验证并发调用的稳定性
      */
     @Test
     public void testConcurrentHook() throws InterruptedException {
@@ -214,7 +216,7 @@ public class SoHookStressTest {
             final int threadId = i;
             executor.submit(() -> {
                 try {
-                    int result = SoHook.hook(Collections.singletonList("libc.so"));
+                    int result = SoHook.hook(Collections.singletonList("libm.so"));
                     if (result == 0) {
                         successCount.incrementAndGet();
                     }
@@ -276,15 +278,16 @@ public class SoHookStressTest {
 
     /**
      * 测试Hook大量库
+     * 注意：此测试只验证 API 能处理多个库
      */
     @Test
     public void testHookManyLibraries() {
         List<String> libraries = new ArrayList<>();
-        libraries.add("libc.so");
         libraries.add("libm.so");
         libraries.add("libdl.so");
         libraries.add("liblog.so");
         libraries.add("libz.so");
+        libraries.add("libandroid.so");
         
         int result = SoHook.hook(libraries);
         assertEquals("Hook many libraries should succeed", 0, result);

@@ -7,7 +7,7 @@ import android.util.Log;
  * 用于准确性测试，提供可控的内存分配和释放
  */
 public class TestMemoryHelper {
-    private static final String TAG = "TestMemoryHelper";
+    private static final String TAG = "SoHook-TestMemoryHelper";
     private static boolean sLibraryLoaded = false;
 
     static {

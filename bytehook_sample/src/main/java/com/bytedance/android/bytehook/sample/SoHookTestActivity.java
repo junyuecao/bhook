@@ -17,7 +17,7 @@ import java.util.List;
 
 public class SoHookTestActivity extends AppCompatActivity {
 
-    private static final String TAG = "SoHookTest";
+    private static final String TAG = "SoHook-TestActivity";
     private TextView tvStats;
     private boolean isHooked = false;
     private Handler handler = new Handler(Looper.getMainLooper());

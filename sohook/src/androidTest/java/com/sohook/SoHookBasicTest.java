@@ -22,7 +22,7 @@ import static org.junit.Assert.*;
  */
 @RunWith(AndroidJUnit4.class)
 public class SoHookBasicTest {
-    private static final String TAG = "SoHookBasicTest";
+    private static final String TAG = "SoHook-BasicTest";
     private Context context;
 
     @Before
@@ -101,14 +101,15 @@ public class SoHookBasicTest {
     }
 
     /**
-     * 测试Hook功能（使用系统库）
+     * 测试Hook功能
+     * 注意：此测试验证 Hook API 的基本功能，不验证实际捕获
      */
     @Test
     public void testHook() {
         SoHook.init(true);
         
-        // Hook libc.so（系统库，总是存在）
-        int result = SoHook.hook(Collections.singletonList("libc.so"));
+        // Hook 一个存在的系统库（只测试 API 是否工作）
+        int result = SoHook.hook(Collections.singletonList("libm.so"));
         assertEquals("Hook should succeed", 0, result);
         Log.i(TAG, "✓ Hook test passed");
     }
@@ -120,8 +121,8 @@ public class SoHookBasicTest {
     public void testHookMultiple() {
         SoHook.init(true);
         
-        // Hook多个系统库
-        int result = SoHook.hook(Arrays.asList("libc.so", "libm.so", "libdl.so"));
+        // Hook多个系统库（只测试 API 是否工作）
+        int result = SoHook.hook(Arrays.asList("libm.so", "libdl.so", "liblog.so"));
         assertEquals("Hook multiple libraries should succeed", 0, result);
         Log.i(TAG, "✓ Hook multiple test passed");
     }
@@ -156,9 +157,9 @@ public class SoHookBasicTest {
     @Test
     public void testUnhook() {
         SoHook.init(true);
-        SoHook.hook(Collections.singletonList("libc.so"));
+        SoHook.hook(Collections.singletonList("libm.so"));
         
-        int result = SoHook.unhook(Collections.singletonList("libc.so"));
+        int result = SoHook.unhook(Collections.singletonList("libm.so"));
         assertEquals("Unhook should succeed", 0, result);
         Log.i(TAG, "✓ Unhook test passed");
     }

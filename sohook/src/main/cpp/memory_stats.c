@@ -5,7 +5,7 @@
 #include <stdatomic.h>
 #include <string.h>
 
-#define LOG_TAG "MemoryStats"
+#define LOG_TAG "SoHook-Stats"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
 // 混合统计策略：

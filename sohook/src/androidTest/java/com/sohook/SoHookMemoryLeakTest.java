@@ -24,7 +24,7 @@ import static org.junit.Assert.*;
  */
 @RunWith(AndroidJUnit4.class)
 public class SoHookMemoryLeakTest {
-    private static final String TAG = "SoHookMemoryLeakTest";
+    private static final String TAG = "SoHook-MemoryLeakTest";
     private Context context;
     private File testDir;
 
@@ -156,14 +156,15 @@ public class SoHookMemoryLeakTest {
 
     /**
      * 测试Hook后的统计信息
+     * 注意：此测试只验证 Hook API 不会导致崩溃，不验证实际捕获
      */
     @Test
     public void testStatsAfterHook() {
         // 重置统计
         SoHook.resetStats();
         
-        // Hook libc.so
-        int hookResult = SoHook.hook(Collections.singletonList("libc.so"));
+        // Hook 一个系统库（只测试 API）
+        int hookResult = SoHook.hook(Collections.singletonList("libm.so"));
         assertEquals("Hook should succeed", 0, hookResult);
         
         // 等待一小段时间让Hook生效
@@ -177,7 +178,6 @@ public class SoHookMemoryLeakTest {
         SoHook.MemoryStats stats = SoHook.getMemoryStats();
         assertNotNull("Stats should not be null", stats);
         
-        // Hook后可能会有一些内存分配
         Log.i(TAG, "✓ Stats after hook test passed");
         Log.d(TAG, "Stats after hook: " + stats);
     }
