@@ -72,6 +72,8 @@ if(EXISTS "${TEST_MEMORY_DIR}/test_memory.c")
         ${TEST_MEMORY_DIR}/test_memory_jni.c
         ${TEST_MEMORY_DIR}/test_memory_cpp.cpp
         ${TEST_MEMORY_DIR}/test_memory_cpp_jni.c
+        ${TEST_MEMORY_DIR}/test_fd.c
+        ${TEST_MEMORY_DIR}/test_fd_jni.c
     )
     
     # 包含头文件
