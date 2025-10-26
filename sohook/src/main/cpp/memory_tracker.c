@@ -182,45 +182,42 @@ void free_proxy(void *ptr) {
   BYTEHOOK_POP_STACK();
 }
 
-// C++ operator new hook (符号: _Znwm 或 _Znwj，取决于架构)
-// 注意：C++ new/delete 底层会调用 malloc/free，所以会重复追踪
-// 暂时注释掉，只追踪 malloc/free 即可
-//void *operator_new_proxy(size_t size) {
-//  void *result = BYTEHOOK_CALL_PREV(operator_new_proxy, void *(*)(size_t), size);
-//  if (result != NULL && !g_in_hook) {
-//    add_memory_record(result, size);
-//  }
-//  BYTEHOOK_POP_STACK();
-//  return result;
-//}
-//
-//// C++ operator new[] hook (符号: _Znam 或 _Znaj)
-//void *operator_new_array_proxy(size_t size) {
-//  void *result = BYTEHOOK_CALL_PREV(operator_new_array_proxy, void *(*)(size_t), size);
-//  if (result != NULL && !g_in_hook) {
-//    add_memory_record(result, size);
-//  }
-//  BYTEHOOK_POP_STACK();
-//  return result;
-//}
-//
-//// C++ operator delete hook (符号: _ZdlPv)
-//void operator_delete_proxy(void *ptr) {
-//  if (ptr != NULL && !g_in_hook) {
-//    remove_memory_record(ptr);
-//  }
-//  BYTEHOOK_CALL_PREV(operator_delete_proxy, void (*)(void *), ptr);
-//  BYTEHOOK_POP_STACK();
-//}
-//
-//// C++ operator delete[] hook (符号: _ZdaPv)
-//void operator_delete_array_proxy(void *ptr) {
-//  if (ptr != NULL && !g_in_hook) {
-//    remove_memory_record(ptr);
-//  }
-//  BYTEHOOK_CALL_PREV(operator_delete_array_proxy, void (*)(void *), ptr);
-//  BYTEHOOK_POP_STACK();
-//}
+void *operator_new_proxy(size_t size) {
+  void *result = BYTEHOOK_CALL_PREV(operator_new_proxy, void *(*)(size_t), size);
+  if (result != NULL && !g_in_hook) {
+    add_memory_record(result, size);
+  }
+  BYTEHOOK_POP_STACK();
+  return result;
+}
+
+// C++ operator new[] hook (符号: _Znam 或 _Znaj)
+void *operator_new_array_proxy(size_t size) {
+  void *result = BYTEHOOK_CALL_PREV(operator_new_array_proxy, void *(*)(size_t), size);
+  if (result != NULL && !g_in_hook) {
+    add_memory_record(result, size);
+  }
+  BYTEHOOK_POP_STACK();
+  return result;
+}
+
+// C++ operator delete hook (符号: _ZdlPv)
+void operator_delete_proxy(void *ptr) {
+  if (ptr != NULL && !g_in_hook) {
+    remove_memory_record(ptr);
+  }
+  BYTEHOOK_CALL_PREV(operator_delete_proxy, void (*)(void *), ptr);
+  BYTEHOOK_POP_STACK();
+}
+
+// C++ operator delete[] hook (符号: _ZdaPv)
+void operator_delete_array_proxy(void *ptr) {
+  if (ptr != NULL && !g_in_hook) {
+    remove_memory_record(ptr);
+  }
+  BYTEHOOK_CALL_PREV(operator_delete_array_proxy, void (*)(void *), ptr);
+  BYTEHOOK_POP_STACK();
+}
 
 // 初始化内存追踪器
 int memory_tracker_init(bool debug, bool enable_backtrace) {
@@ -355,32 +352,32 @@ int memory_tracker_hook(const char **so_names, int count) {
     const char *new_array_symbol = "_Znaj";
     #endif
     
-//    LOGI("Calling bytehook_hook_single for operator new (%s)...", new_symbol);
-//    g_new_stubs[g_hook_count] = bytehook_hook_single(so_name, NULL, new_symbol, (void *)operator_new_proxy, hook_callback, NULL);
-//    if (g_new_stubs[g_hook_count] != NULL) {
-//      LOGI("  operator new stub: %p", g_new_stubs[g_hook_count]);
-//    }
-//
-//    // Hook C++ operator new[]
-//    LOGI("Calling bytehook_hook_single for operator new[] (%s)...", new_array_symbol);
-//    g_new_array_stubs[g_hook_count] = bytehook_hook_single(so_name, NULL, new_array_symbol, (void *)operator_new_array_proxy, hook_callback, NULL);
-//    if (g_new_array_stubs[g_hook_count] != NULL) {
-//      LOGI("  operator new[] stub: %p", g_new_array_stubs[g_hook_count]);
-//    }
-//
-//    // Hook C++ operator delete
-//    LOGI("Calling bytehook_hook_single for operator delete (_ZdlPv)...");
-//    g_delete_stubs[g_hook_count] = bytehook_hook_single(so_name, NULL, "_ZdlPv", (void *)operator_delete_proxy, hook_callback, NULL);
-//    if (g_delete_stubs[g_hook_count] != NULL) {
-//      LOGI("  operator delete stub: %p", g_delete_stubs[g_hook_count]);
-//    }
-//
-//    // Hook C++ operator delete[]
-//    LOGI("Calling bytehook_hook_single for operator delete[] (_ZdaPv)...");
-//    g_delete_array_stubs[g_hook_count] = bytehook_hook_single(so_name, NULL, "_ZdaPv", (void *)operator_delete_array_proxy, hook_callback, NULL);
-//    if (g_delete_array_stubs[g_hook_count] != NULL) {
-//      LOGI("  operator delete[] stub: %p", g_delete_array_stubs[g_hook_count]);
-//    }
+    LOGI("Calling bytehook_hook_single for operator new (%s)...", new_symbol);
+    g_new_stubs[g_hook_count] = bytehook_hook_single(so_name, NULL, new_symbol, (void *)operator_new_proxy, hook_callback, NULL);
+    if (g_new_stubs[g_hook_count] != NULL) {
+      LOGI("  operator new stub: %p", g_new_stubs[g_hook_count]);
+    }
+
+    // Hook C++ operator new[]
+    LOGI("Calling bytehook_hook_single for operator new[] (%s)...", new_array_symbol);
+    g_new_array_stubs[g_hook_count] = bytehook_hook_single(so_name, NULL, new_array_symbol, (void *)operator_new_array_proxy, hook_callback, NULL);
+    if (g_new_array_stubs[g_hook_count] != NULL) {
+      LOGI("  operator new[] stub: %p", g_new_array_stubs[g_hook_count]);
+    }
+
+    // Hook C++ operator delete
+    LOGI("Calling bytehook_hook_single for operator delete (_ZdlPv)...");
+    g_delete_stubs[g_hook_count] = bytehook_hook_single(so_name, NULL, "_ZdlPv", (void *)operator_delete_proxy, hook_callback, NULL);
+    if (g_delete_stubs[g_hook_count] != NULL) {
+      LOGI("  operator delete stub: %p", g_delete_stubs[g_hook_count]);
+    }
+
+    // Hook C++ operator delete[]
+    LOGI("Calling bytehook_hook_single for operator delete[] (_ZdaPv)...");
+    g_delete_array_stubs[g_hook_count] = bytehook_hook_single(so_name, NULL, "_ZdaPv", (void *)operator_delete_array_proxy, hook_callback, NULL);
+    if (g_delete_array_stubs[g_hook_count] != NULL) {
+      LOGI("  operator delete[] stub: %p", g_delete_array_stubs[g_hook_count]);
+    }
 
     g_hook_count++;
   }
@@ -418,22 +415,22 @@ int memory_tracker_unhook(const char **so_names, int count) {
       g_free_stubs[i] = NULL;
     }
     // Unhook C++ new/delete (已注释，因为会重复追踪)
-//    if (g_new_stubs[i] != NULL) {
-//      bytehook_unhook(g_new_stubs[i]);
-//      g_new_stubs[i] = NULL;
-//    }
-//    if (g_new_array_stubs[i] != NULL) {
-//      bytehook_unhook(g_new_array_stubs[i]);
-//      g_new_array_stubs[i] = NULL;
-//    }
-//    if (g_delete_stubs[i] != NULL) {
-//      bytehook_unhook(g_delete_stubs[i]);
-//      g_delete_stubs[i] = NULL;
-//    }
-//    if (g_delete_array_stubs[i] != NULL) {
-//      bytehook_unhook(g_delete_array_stubs[i]);
-//      g_delete_array_stubs[i] = NULL;
-//    }
+    if (g_new_stubs[i] != NULL) {
+      bytehook_unhook(g_new_stubs[i]);
+      g_new_stubs[i] = NULL;
+    }
+    if (g_new_array_stubs[i] != NULL) {
+      bytehook_unhook(g_new_array_stubs[i]);
+      g_new_array_stubs[i] = NULL;
+    }
+    if (g_delete_stubs[i] != NULL) {
+      bytehook_unhook(g_delete_stubs[i]);
+      g_delete_stubs[i] = NULL;
+    }
+    if (g_delete_array_stubs[i] != NULL) {
+      bytehook_unhook(g_delete_array_stubs[i]);
+      g_delete_array_stubs[i] = NULL;
+    }
   }
 
   g_hook_count = 0;
@@ -473,22 +470,22 @@ int memory_tracker_unhook_all(void) {
       g_free_stubs[i] = NULL;
     }
     // Unhook C++ new/delete (已注释，因为会重复追踪)
-//    if (g_new_stubs[i] != NULL) {
-//      bytehook_unhook(g_new_stubs[i]);
-//      g_new_stubs[i] = NULL;
-//    }
-//    if (g_new_array_stubs[i] != NULL) {
-//      bytehook_unhook(g_new_array_stubs[i]);
-//      g_new_array_stubs[i] = NULL;
-//    }
-//    if (g_delete_stubs[i] != NULL) {
-//      bytehook_unhook(g_delete_stubs[i]);
-//      g_delete_stubs[i] = NULL;
-//    }
-//    if (g_delete_array_stubs[i] != NULL) {
-//      bytehook_unhook(g_delete_array_stubs[i]);
-//      g_delete_array_stubs[i] = NULL;
-//    }
+    if (g_new_stubs[i] != NULL) {
+      bytehook_unhook(g_new_stubs[i]);
+      g_new_stubs[i] = NULL;
+    }
+    if (g_new_array_stubs[i] != NULL) {
+      bytehook_unhook(g_new_array_stubs[i]);
+      g_new_array_stubs[i] = NULL;
+    }
+    if (g_delete_stubs[i] != NULL) {
+      bytehook_unhook(g_delete_stubs[i]);
+      g_delete_stubs[i] = NULL;
+    }
+    if (g_delete_array_stubs[i] != NULL) {
+      bytehook_unhook(g_delete_array_stubs[i]);
+      g_delete_array_stubs[i] = NULL;
+    }
   }
 
   g_hook_count = 0;
