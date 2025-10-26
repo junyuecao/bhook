@@ -228,7 +228,7 @@ I/SoHookTest: Unhook result: 0
 
 ## 下一步
 
-- 查看 [README.md](README.md) 了解详细功能
+- 查看 [README.md](../README.md) 了解详细功能
 - 查看 [USAGE_EXAMPLE.md](USAGE_EXAMPLE.md) 了解更多使用示例
 - 查看 [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) 了解项目结构
 

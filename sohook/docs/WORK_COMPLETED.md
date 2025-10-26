@@ -313,11 +313,11 @@ Week 3: 分段锁和其他优化
 
 ## 📞 相关文档
 
-- 📖 [快速开始](./PERF_QUICK_START.md)
-- 📊 [详细测试文档](./PERFORMANCE_TEST.md)
+- 📖 [快速开始](PERF_QUICK_START.md)
+- 📊 [详细测试文档](PERFORMANCE_TEST.md)
 - 🔧 [优化实施计划](./OPTIMIZATION_PLAN.md)
-- 📝 [工作总结](./PERF_TEST_SUMMARY.md)
-- 📚 [主文档](./README.md)
+- 📝 [工作总结](PERF_TEST_SUMMARY.md)
+- 📚 [主文档](../README.md)
 
 ---
 

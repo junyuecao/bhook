@@ -66,7 +66,7 @@ Wall time:  88 ms
 - ⚠️ 多线程性能略有下降（桶锁开销）
 - 💡 下一步：优化统计锁
 
-**技术文档**: [HASH_OPTIMIZATION_DONE.md](./HASH_OPTIMIZATION_DONE.md)
+**技术文档**: [HASH_OPTIMIZATION_DONE.md](HASH_OPTIMIZATION_DONE.md)
 
 ---
 
@@ -92,7 +92,7 @@ Wall time:  88 ms
 - ✅ 消除了统计锁竞争
 - 💡 真正的瓶颈：record malloc/free
 
-**技术文档**: [LAZY_STATS_OPTIMIZATION.md](./LAZY_STATS_OPTIMIZATION.md)
+**技术文档**: [LAZY_STATS_OPTIMIZATION.md](LAZY_STATS_OPTIMIZATION.md)
 
 ---
 
@@ -121,7 +121,7 @@ Wall time:  88 ms
 - ✅ 内存池完全消除了这个瓶颈
 - ✅ 达到工业级性能水平
 
-**技术文档**: [MEMORY_POOL_OPTIMIZATION.md](./MEMORY_POOL_OPTIMIZATION.md)
+**技术文档**: [MEMORY_POOL_OPTIMIZATION.md](MEMORY_POOL_OPTIMIZATION.md)
 
 ---
 
@@ -354,19 +354,18 @@ sohook/src/main/cpp/
 ## 📚 相关文档
 
 ### 优化文档
-- [哈希表优化](./HASH_OPTIMIZATION_DONE.md)
-- [延迟统计优化](./LAZY_STATS_OPTIMIZATION.md)
-- [内存池优化](./MEMORY_POOL_OPTIMIZATION.md)
-- [优化分析](./OPTIMIZATION_ANALYSIS.md)
+- [哈希表优化](HASH_OPTIMIZATION_DONE.md)
+- [延迟统计优化](LAZY_STATS_OPTIMIZATION.md)
+- [内存池优化](MEMORY_POOL_OPTIMIZATION.md)
+- [优化分析](OPTIMIZATION_ANALYSIS.md)
 
 ### 架构文档
-- [项目结构](./PROJECT_STRUCTURE.md)
-- [使用示例](./USAGE_EXAMPLE.md)
-- [测试指南](./TEST_GUIDE.md)
+- [项目结构](PROJECT_STRUCTURE.md)
+- [使用示例](USAGE_EXAMPLE.md)
 
 ### 性能测试
-- [性能测试总结](./PERF_TEST_SUMMARY.md)
-- [快速开始](./PERF_QUICK_START.md)
+- [性能测试总结](PERF_TEST_SUMMARY.md)
+- [快速开始](PERF_QUICK_START.md)
 
 ## 🎉 总结
 

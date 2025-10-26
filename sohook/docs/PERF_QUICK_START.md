@@ -149,7 +149,7 @@ SoHook.quickBenchmark(1000);  // 减少到 1000 次
 
 ## 下一步
 
-- 📖 阅读 [PERFORMANCE_TEST.md](./PERFORMANCE_TEST.md) 了解详细测试说明
+- 📖 阅读 [PERFORMANCE_TEST.md](PERFORMANCE_TEST.md) 了解详细测试说明
 - 🔧 开始实施优化（哈希表、内存池、分段锁）
 - 📊 使用性能测试验证优化效果
 - 🎯 目标: Free 操作从 25 μs 降至 < 5 μs
