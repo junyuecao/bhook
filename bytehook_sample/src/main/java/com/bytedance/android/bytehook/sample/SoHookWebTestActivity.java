@@ -228,13 +228,31 @@ public class SoHookWebTestActivity extends AppCompatActivity {
             return;
         }
 
-        // 创建 10 个内存泄漏
-        int count = 10;
+        int count = 5;  // 每种类型 5 个
         
+        // C malloc 泄漏
         NativeHacker.allocMemory(count);
+        Log.i(TAG, "创建 " + count + " 个 malloc 泄漏");
         
-        Log.i(TAG, "已创建 " + count + " 个内存泄漏");
-        showToast("已创建 " + count + " 个内存泄漏");
+        // C++ operator new 泄漏
+        NativeHacker.allocWithNew(count);
+        Log.i(TAG, "创建 " + count + " 个 operator new 泄漏");
+        
+        // C++ operator new[] 泄漏
+        NativeHacker.allocWithNewArray(count);
+        Log.i(TAG, "创建 " + count + " 个 operator new[] 泄漏");
+        
+        // C++ new 对象泄漏
+        NativeHacker.allocObjects(count);
+        Log.i(TAG, "创建 " + count + " 个 new 对象泄漏");
+        
+        // C++ new[] 对象数组泄漏
+        NativeHacker.allocObjectArrays(count);
+        Log.i(TAG, "创建 " + count + " 个 new[] 对象数组泄漏");
+        
+        int totalLeaks = count * 5;
+        Log.i(TAG, "总共创建 " + totalLeaks + " 个内存泄漏 (C + C++)");
+        showToast("已创建 " + totalLeaks + " 个内存泄漏\n(包含 C 和 C++ 分配)");
         
         // 立即更新统计
         handler.postDelayed(new Runnable() {

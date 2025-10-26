@@ -36,6 +36,23 @@ public class NativeHacker {
     public static void quickBenchmark(int iterations) {
         nativeQuickBenchmark(iterations);
     }
+    
+    // C++ new/delete 测试函数
+    public static void allocWithNew(int count) {
+        nativeAllocWithNew(count);
+    }
+    
+    public static void allocWithNewArray(int count) {
+        nativeAllocWithNewArray(count);
+    }
+    
+    public static void allocObjects(int count) {
+        nativeAllocObjects(count);
+    }
+    
+    public static void allocObjectArrays(int count) {
+        nativeAllocObjectArrays(count);
+    }
 
     private static native int nativeBytehookHook();
     private static native int nativeBytehookUnhook();
@@ -49,4 +66,10 @@ public class NativeHacker {
     private static native void nativeFreeAllMemory();
     private static native void nativeRunPerfTests();
     private static native void nativeQuickBenchmark(int iterations);
+    
+    // C++ new/delete native 方法
+    private static native void nativeAllocWithNew(int count);
+    private static native void nativeAllocWithNewArray(int count);
+    private static native void nativeAllocObjects(int count);
+    private static native void nativeAllocObjectArrays(int count);
 }

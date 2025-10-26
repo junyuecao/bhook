@@ -32,7 +32,8 @@ void sample_test_strlen(int benchmark) {
 #pragma clang optimize on
 
 // 用于测试内存泄漏检测的函数
-static void *g_test_ptrs[100] = {NULL};
+#define MAX_TEST_PTRS 10000
+static void *g_test_ptrs[MAX_TEST_PTRS] = {NULL};
 static int g_test_ptr_count = 0;
 
 // 禁用优化，确保malloc/free不会被内联
@@ -40,7 +41,7 @@ static int g_test_ptr_count = 0;
 void sample_alloc_memory(int count) {
   LOGI("sample_alloc_memory: allocating %d blocks", count);
   
-  for (int i = 0; i < count && g_test_ptr_count < 100; i++) {
+  for (int i = 0; i < count && g_test_ptr_count < MAX_TEST_PTRS; i++) {
     // 分配不同大小的内存块
     size_t size = 64 + ((size_t)i * 16);
     void *ptr = malloc(size);
@@ -92,6 +93,110 @@ void sample_free_all_memory(void) {
   
   LOGI("sample_free_all_memory: freed %d blocks", g_test_ptr_count);
   g_test_ptr_count = 0;
+}
+
+// ============================================================================
+// C++ new/delete 测试函数
+// ============================================================================
+
+// 测试类
+class TestObject {
+public:
+    int data[10];
+    
+    TestObject() {
+        LOGI("TestObject constructor called");
+        for (int i = 0; i < 10; i++) {
+            data[i] = i;
+        }
+    }
+    
+    ~TestObject() {
+        LOGI("TestObject destructor called");
+    }
+};
+
+// 使用 operator new 分配内存
+void sample_alloc_with_new(int count) {
+  LOGI("sample_alloc_with_new: allocating %d blocks using operator new", count);
+  
+  for (int i = 0; i < count && g_test_ptr_count < MAX_TEST_PTRS; i++) {
+    // 使用 operator new 分配
+    size_t size = 128 + ((size_t)i * 32);
+    void *ptr = ::operator new(size);
+    
+    if (ptr != NULL) {
+      // 写入一些数据
+      memset(ptr, 0xCD, size);
+      g_test_ptrs[g_test_ptr_count++] = ptr;
+      LOGI("  allocated %zu bytes at %p (operator new)", size, ptr);
+    } else {
+      LOGE("  failed to allocate %zu bytes (operator new)", size);
+    }
+  }
+  
+  LOGI("sample_alloc_with_new: total allocated blocks = %d", g_test_ptr_count);
+}
+
+// 使用 operator new[] 分配数组
+void sample_alloc_with_new_array(int count) {
+  LOGI("sample_alloc_with_new_array: allocating %d arrays using operator new[]", count);
+  
+  for (int i = 0; i < count && g_test_ptr_count < MAX_TEST_PTRS; i++) {
+    // 使用 operator new[] 分配
+    size_t size = 256 + ((size_t)i * 64);
+    void *ptr = ::operator new[](size);
+    
+    if (ptr != NULL) {
+      // 写入一些数据
+      memset(ptr, 0xEF, size);
+      g_test_ptrs[g_test_ptr_count++] = ptr;
+      LOGI("  allocated %zu bytes at %p (operator new[])", size, ptr);
+    } else {
+      LOGE("  failed to allocate %zu bytes (operator new[])", size);
+    }
+  }
+  
+  LOGI("sample_alloc_with_new_array: total allocated blocks = %d", g_test_ptr_count);
+}
+
+// 使用 new 创建对象
+void sample_alloc_objects(int count) {
+  LOGI("sample_alloc_objects: creating %d TestObjects using new", count);
+  
+  for (int i = 0; i < count && g_test_ptr_count < MAX_TEST_PTRS; i++) {
+    // 使用 new 创建对象
+    TestObject *obj = new TestObject();
+    
+    if (obj != NULL) {
+      g_test_ptrs[g_test_ptr_count++] = obj;
+      LOGI("  created TestObject at %p", (void *)obj);
+    } else {
+      LOGE("  failed to create TestObject");
+    }
+  }
+  
+  LOGI("sample_alloc_objects: total created objects = %d", g_test_ptr_count);
+}
+
+// 使用 new[] 创建对象数组
+void sample_alloc_object_arrays(int count) {
+  LOGI("sample_alloc_object_arrays: creating %d TestObject arrays using new[]", count);
+  
+  for (int i = 0; i < count && g_test_ptr_count < MAX_TEST_PTRS; i++) {
+    // 使用 new[] 创建对象数组
+    int array_size = 3 + (i % 5);  // 3-7 个对象
+    TestObject *arr = new TestObject[array_size];
+    
+    if (arr != NULL) {
+      g_test_ptrs[g_test_ptr_count++] = arr;
+      LOGI("  created TestObject[%d] at %p", array_size, (void *)arr);
+    } else {
+      LOGE("  failed to create TestObject array");
+    }
+  }
+  
+  LOGI("sample_alloc_object_arrays: total created arrays = %d", g_test_ptr_count);
 }
 #pragma clang optimize on
 
