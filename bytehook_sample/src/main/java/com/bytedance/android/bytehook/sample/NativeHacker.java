@@ -53,6 +53,15 @@ public class NativeHacker {
     public static void allocObjectArrays(int count) {
         nativeAllocObjectArrays(count);
     }
+    
+    // FD 泄漏测试函数
+    public static void leakFileDescriptors(int count, String pathPrefix) {
+        nativeLeakFileDescriptors(count, pathPrefix);
+    }
+    
+    public static void leakFilePointers(int count, String pathPrefix) {
+        nativeLeakFilePointers(count, pathPrefix);
+    }
 
     private static native int nativeBytehookHook();
     private static native int nativeBytehookUnhook();
@@ -72,4 +81,8 @@ public class NativeHacker {
     private static native void nativeAllocWithNewArray(int count);
     private static native void nativeAllocObjects(int count);
     private static native void nativeAllocObjectArrays(int count);
+    
+    // FD 泄漏 native 方法
+    private static native void nativeLeakFileDescriptors(int count, String pathPrefix);
+    private static native void nativeLeakFilePointers(int count, String pathPrefix);
 }

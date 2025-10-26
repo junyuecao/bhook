@@ -1,5 +1,5 @@
 import axios, { type AxiosInstance } from 'axios';
-import type { MemoryStats, LeakGroup, ApiResponse } from '../types/index';
+import type { MemoryStats, LeakGroup, FdStats, FdLeak, ApiResponse } from '../types/index';
 
 // API 客户端配置
 const DEFAULT_BASE_URL = 'http://localhost:8080';
@@ -44,6 +44,24 @@ class SoHookApiClient {
   // 获取完整泄漏报告（文本格式）
   async getLeakReport(): Promise<string> {
     const response = await this.client.get<ApiResponse<string>>('/api/leak-report');
+    return response.data.data;
+  }
+
+  // 获取FD统计信息
+  async getFdStats(): Promise<FdStats> {
+    const response = await this.client.get<ApiResponse<FdStats>>('/api/fd-stats');
+    return response.data.data;
+  }
+
+  // 获取FD泄漏列表
+  async getFdLeaks(): Promise<FdLeak[]> {
+    const response = await this.client.get<ApiResponse<FdLeak[]>>('/api/fd-leaks');
+    return response.data.data;
+  }
+
+  // 获取FD泄漏报告（文本格式）
+  async getFdLeakReport(): Promise<string> {
+    const response = await this.client.get<ApiResponse<string>>('/api/fd-leak-report');
     return response.data.data;
   }
 

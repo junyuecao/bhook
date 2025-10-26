@@ -5,6 +5,7 @@
 #include <inttypes.h>
 #include <jni.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/system_properties.h>
@@ -169,6 +170,56 @@ static void hacker_jni_alloc_object_arrays(JNIEnv *env, jobject thiz, jint count
   if (NULL != sample_alloc_object_arrays) sample_alloc_object_arrays(count);
 }
 
+// FD泄漏测试函数
+static void hacker_jni_leak_file_descriptors(JNIEnv *env, jobject thiz, jint count, jstring pathPrefix) {
+  (void)thiz;
+
+  const char *c_path_prefix = (*env)->GetStringUTFChars(env, pathPrefix, 0);
+  if (NULL == c_path_prefix) return;
+
+  for (int i = 0; i < count; i++) {
+    char path[256];
+    snprintf(path, sizeof(path), "%s_open_%d.tmp", c_path_prefix, i);
+    
+    // 使用open打开文件但不关闭（故意泄漏）
+    int fd = open(path, O_CREAT | O_WRONLY | O_TRUNC, 0644);
+    if (fd >= 0) {
+      // 写入一些数据
+      const char *data = "FD leak test data\n";
+      write(fd, data, strlen(data));
+      // 故意不调用 close(fd)，造成泄漏
+      __android_log_print(ANDROID_LOG_INFO, "NativeHacker", "Leaked FD %d for file: %s", fd, path);
+    }
+  }
+
+  (*env)->ReleaseStringUTFChars(env, pathPrefix, c_path_prefix);
+}
+
+static void hacker_jni_leak_file_pointers(JNIEnv *env, jobject thiz, jint count, jstring pathPrefix) {
+  (void)thiz;
+
+  const char *c_path_prefix = (*env)->GetStringUTFChars(env, pathPrefix, 0);
+  if (NULL == c_path_prefix) return;
+
+  for (int i = 0; i < count; i++) {
+    char path[256];
+    snprintf(path, sizeof(path), "%s_fopen_%d.tmp", c_path_prefix, i);
+    
+    // 使用fopen打开文件但不关闭（故意泄漏）
+    FILE *fp = fopen(path, "w");
+    if (fp != NULL) {
+      // 写入一些数据
+      fprintf(fp, "FILE* leak test data\n");
+      fflush(fp);
+      // 故意不调用 fclose(fp)，造成泄漏
+      int fd = fileno(fp);
+      __android_log_print(ANDROID_LOG_INFO, "NativeHacker", "Leaked FILE* (FD %d) for file: %s", fd, path);
+    }
+  }
+
+  (*env)->ReleaseStringUTFChars(env, pathPrefix, c_path_prefix);
+}
+
 static void hacker_jni_do_dlclose(JNIEnv *env, jobject thiz) {
   (void)env;
   (void)thiz;
@@ -207,7 +258,9 @@ static JNINativeMethod hacker_jni_methods[] = {
     {"nativeAllocWithNew", "(I)V", (void *)hacker_jni_alloc_with_new},
     {"nativeAllocWithNewArray", "(I)V", (void *)hacker_jni_alloc_with_new_array},
     {"nativeAllocObjects", "(I)V", (void *)hacker_jni_alloc_objects},
-    {"nativeAllocObjectArrays", "(I)V", (void *)hacker_jni_alloc_object_arrays}};
+    {"nativeAllocObjectArrays", "(I)V", (void *)hacker_jni_alloc_object_arrays},
+    {"nativeLeakFileDescriptors", "(ILjava/lang/String;)V", (void *)hacker_jni_leak_file_descriptors},
+    {"nativeLeakFilePointers", "(ILjava/lang/String;)V", (void *)hacker_jni_leak_file_pointers}};
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
   JNIEnv *env;

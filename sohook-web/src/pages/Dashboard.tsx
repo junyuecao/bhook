@@ -2,7 +2,9 @@ import { useEffect } from 'react';
 import { useMemoryStore } from '../store/useMemoryStore';
 import { ConnectionStatus } from '../components/ConnectionStatus';
 import { MemoryStatsCard } from '../components/MemoryStatsCard';
+import { FdStatsCard } from '../components/FdStatsCard';
 import { LeaksList } from '../components/LeaksList';
+import { FdLeaksList } from '../components/FdLeaksList';
 import { MemoryChart } from '../components/MemoryChart';
 import { Button } from '../components/ui/button';
 import { RefreshCw, Trash2 } from 'lucide-react';
@@ -11,12 +13,16 @@ export function Dashboard() {
   const {
     stats,
     leaks,
+    fdStats,
+    fdLeaks,
     isLoading,
     isConnected,
     autoRefresh,
     refreshInterval,
     fetchStats,
     fetchLeaks,
+    fetchFdStats,
+    fetchFdLeaks,
     resetStats,
     checkConnection,
   } = useMemoryStore();
@@ -31,7 +37,12 @@ export function Dashboard() {
     if (!autoRefresh || !isConnected) return;
 
     const fetchData = async () => {
-      await Promise.all([fetchStats(), fetchLeaks()]);
+      await Promise.all([
+        fetchStats(), 
+        fetchLeaks(), 
+        fetchFdStats(), 
+        fetchFdLeaks()
+      ]);
     };
 
     // 立即获取一次
@@ -41,10 +52,15 @@ export function Dashboard() {
     const timer = setInterval(fetchData, refreshInterval);
 
     return () => clearInterval(timer);
-  }, [autoRefresh, isConnected, refreshInterval, fetchStats, fetchLeaks]);
+  }, [autoRefresh, isConnected, refreshInterval, fetchStats, fetchLeaks, fetchFdStats, fetchFdLeaks]);
 
   const handleRefresh = async () => {
-    await Promise.all([fetchStats(), fetchLeaks()]);
+    await Promise.all([
+      fetchStats(), 
+      fetchLeaks(), 
+      fetchFdStats(), 
+      fetchFdLeaks()
+    ]);
   };
 
   const handleReset = async () => {
@@ -91,10 +107,11 @@ export function Dashboard() {
 
         {/* Content */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column - Connection Status & Memory Stats */}
+          {/* Left Column - Connection Status & Stats */}
           <div className="lg:col-span-1 space-y-6">
             <ConnectionStatus />
             <MemoryStatsCard stats={stats} isLoading={isLoading} />
+            <FdStatsCard stats={fdStats} isLoading={isLoading} />
           </div>
 
           {/* Right Column - Chart and Leaks */}
@@ -108,6 +125,7 @@ export function Dashboard() {
             )}
             
             <LeaksList leaks={leaks} isLoading={isLoading} />
+            <FdLeaksList leaks={fdLeaks} isLoading={isLoading} />
           </div>
         </div>
 

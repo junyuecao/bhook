@@ -98,6 +98,12 @@ public class SoHookWebServer extends NanoHTTPD {
                 response = handleGetLeaks();
             } else if (uri.equals("/api/leak-report")) {
                 response = handleGetLeakReport();
+            } else if (uri.equals("/api/fd-stats")) {
+                response = handleGetFdStats();
+            } else if (uri.equals("/api/fd-leaks")) {
+                response = handleGetFdLeaks();
+            } else if (uri.equals("/api/fd-leak-report")) {
+                response = handleGetFdLeakReport();
             } else if (uri.equals("/api/reset") && method == Method.POST) {
                 response = handleReset();
             } else {
@@ -163,9 +169,51 @@ public class SoHookWebServer extends NanoHTTPD {
      */
     private Response handleReset() {
         SoHook.resetStats();
+        SoHook.resetFdStats();
         Map<String, Object> data = new HashMap<>();
         data.put("message", "Statistics reset successfully");
         return createSuccessResponse(data);
+    }
+
+    /**
+     * 获取FD统计
+     */
+    private Response handleGetFdStats() {
+        SoHook.FdStats stats = SoHook.getFdStats();
+        
+        Map<String, Object> data = new HashMap<>();
+        data.put("totalOpenCount", stats.totalOpenCount);
+        data.put("totalCloseCount", stats.totalCloseCount);
+        data.put("currentOpenCount", stats.currentOpenCount);
+        
+        return createSuccessResponse(data);
+    }
+
+    /**
+     * 获取FD泄漏列表
+     */
+    private Response handleGetFdLeaks() {
+        String leaksJson = SoHook.nativeGetFdLeaksJson();
+        
+        if (leaksJson == null || leaksJson.isEmpty()) {
+            return createSuccessResponse(new ArrayList<>());
+        }
+        
+        try {
+            List<Map<String, Object>> leaks = gson.fromJson(leaksJson, List.class);
+            return createSuccessResponse(leaks);
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to parse FD leaks JSON", e);
+            return createSuccessResponse(new ArrayList<>());
+        }
+    }
+
+    /**
+     * 获取FD泄漏报告
+     */
+    private Response handleGetFdLeakReport() {
+        String report = SoHook.getFdLeakReport();
+        return createSuccessResponse(report);
     }
 
     /**

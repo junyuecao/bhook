@@ -23,6 +23,20 @@ export interface LeakGroup {
   totalSize: number;    // 该调用栈的总泄漏大小
 }
 
+// FD统计信息
+export interface FdStats {
+  totalOpenCount: number;
+  totalCloseCount: number;
+  currentOpenCount: number;
+}
+
+// FD泄漏记录
+export interface FdLeak {
+  fd: number;
+  path: string;
+  flags: number;
+}
+
 // 内存泄漏报告
 export interface MemoryReport {
   id: string;

@@ -1,12 +1,14 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { MemoryStats, LeakGroup } from '../types/index';
+import type { MemoryStats, LeakGroup, FdStats, FdLeak } from '../types/index';
 import { apiClient } from '../services/api';
 
 interface MemoryStore {
   // 状态
   stats: MemoryStats | null;
   leaks: LeakGroup[];  // 改为泄漏分组
+  fdStats: FdStats | null;
+  fdLeaks: FdLeak[];
   isConnected: boolean;
   isLoading: boolean;
   error: string | null;
@@ -18,6 +20,8 @@ interface MemoryStore {
   setServerUrl: (url: string) => void;
   fetchStats: () => Promise<void>;
   fetchLeaks: () => Promise<void>;
+  fetchFdStats: () => Promise<void>;
+  fetchFdLeaks: () => Promise<void>;
   resetStats: () => Promise<void>;
   checkConnection: () => Promise<void>;
   setAutoRefresh: (enabled: boolean) => void;
@@ -44,6 +48,8 @@ export const useMemoryStore = create<MemoryStore>()(
         // 初始状态
         stats: null,
         leaks: [],
+        fdStats: null,
+        fdLeaks: [],
         isConnected: false,
         isLoading: false,
         error: null,
@@ -91,6 +97,37 @@ export const useMemoryStore = create<MemoryStore>()(
       });
     }
   },
+  
+  // 获取FD统计
+  fetchFdStats: async () => {
+    set({ isLoading: true, error: null });
+    try {
+      const fdStats = await apiClient.getFdStats();
+      set({ fdStats, isConnected: true, isLoading: false });
+    } catch (error) {
+      set({
+        error: error instanceof Error ? error.message : '获取FD统计失败',
+        isLoading: false,
+        isConnected: false,
+      });
+    }
+  },
+  
+  // 获取FD泄漏列表
+  fetchFdLeaks: async () => {
+    set({ isLoading: true, error: null });
+    try {
+      const fdLeaks = await apiClient.getFdLeaks();
+      set({ fdLeaks, isConnected: true, isLoading: false });
+    } catch (error) {
+      set({
+        error: error instanceof Error ? error.message : '获取FD泄漏列表失败',
+        isLoading: false,
+        isConnected: false,
+      });
+    }
+  },
+  
   // 重置统计
   resetStats: async () => {
     set({ isLoading: true, error: null });
@@ -99,6 +136,8 @@ export const useMemoryStore = create<MemoryStore>()(
       // 重置后重新获取数据
       await get().fetchStats();
       await get().fetchLeaks();
+      await get().fetchFdStats();
+      await get().fetchFdLeaks();
     } catch (error) {
       set({
         error: error instanceof Error ? error.message : '重置统计失败',

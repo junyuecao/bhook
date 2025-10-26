@@ -172,6 +172,13 @@
                 <Button
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:text="📁 创建FD泄漏"
+                    android:onClick="onCreateFdLeakClick"
+                    android:layout_marginBottom="8dp"/>
+
+                <Button
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
                     android:text="🔄 重置统计"
                     android:onClick="onResetStatsClick"/>
 

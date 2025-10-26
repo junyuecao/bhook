@@ -264,10 +264,44 @@ public class SoHookWebTestActivity extends AppCompatActivity {
     }
 
     /**
+     * 创建FD泄漏（用于测试）
+     */
+    public void onCreateFdLeakClick(View view) {
+        if (!isHooked) {
+            showToast("请先开始监控");
+            return;
+        }
+
+        int count = 5;  // 每种类型 5 个
+        String pathPrefix = getCacheDir().getAbsolutePath() + "/test_fd_leak";
+        
+        // open 泄漏
+        NativeHacker.leakFileDescriptors(count, pathPrefix);
+        Log.i(TAG, "创建 " + count + " 个 open FD 泄漏");
+        
+        // fopen 泄漏
+        NativeHacker.leakFilePointers(count, pathPrefix);
+        Log.i(TAG, "创建 " + count + " 个 fopen FD 泄漏");
+        
+        int totalLeaks = count * 2;
+        Log.i(TAG, "总共创建 " + totalLeaks + " 个 FD 泄漏 (open + fopen)");
+        showToast("已创建 " + totalLeaks + " 个 FD 泄漏\n(包含 open 和 fopen)");
+        
+        // 立即更新统计
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                updateStats();
+            }
+        }, 500);
+    }
+
+    /**
      * 重置统计
      */
     public void onResetStatsClick(View view) {
         SoHook.resetStats();
+        SoHook.resetFdStats();
         Log.i(TAG, "统计已重置");
         showToast("统计已重置");
         updateStats();
@@ -277,17 +311,25 @@ public class SoHookWebTestActivity extends AppCompatActivity {
      * 更新统计信息显示
      */
     private void updateStats() {
-        SoHook.MemoryStats stats = SoHook.getMemoryStats();
+        SoHook.MemoryStats memStats = SoHook.getMemoryStats();
+        SoHook.FdStats fdStats = SoHook.getFdStats();
         
         StringBuilder sb = new StringBuilder();
         sb.append("📊 内存统计\n\n");
-        sb.append("总分配次数: ").append(stats.totalAllocCount).append("\n");
-        sb.append("总分配大小: ").append(formatBytes(stats.totalAllocSize)).append("\n");
-        sb.append("总释放次数: ").append(stats.totalFreeCount).append("\n");
-        sb.append("总释放大小: ").append(formatBytes(stats.totalFreeSize)).append("\n");
+        sb.append("总分配次数: ").append(memStats.totalAllocCount).append("\n");
+        sb.append("总分配大小: ").append(formatBytes(memStats.totalAllocSize)).append("\n");
+        sb.append("总释放次数: ").append(memStats.totalFreeCount).append("\n");
+        sb.append("总释放大小: ").append(formatBytes(memStats.totalFreeSize)).append("\n");
         sb.append("\n");
-        sb.append("⚠️ 当前泄漏次数: ").append(stats.currentAllocCount).append("\n");
-        sb.append("⚠️ 当前泄漏大小: ").append(formatBytes(stats.currentAllocSize)).append("\n");
+        sb.append("⚠️ 当前泄漏次数: ").append(memStats.currentAllocCount).append("\n");
+        sb.append("⚠️ 当前泄漏大小: ").append(formatBytes(memStats.currentAllocSize)).append("\n");
+        
+        sb.append("\n━━━━━━━━━━━━━━━━\n\n");
+        sb.append("📁 文件描述符统计\n\n");
+        sb.append("总打开次数: ").append(fdStats.totalOpenCount).append("\n");
+        sb.append("总关闭次数: ").append(fdStats.totalCloseCount).append("\n");
+        sb.append("\n");
+        sb.append("⚠️ 当前未关闭: ").append(fdStats.currentOpenCount).append("\n");
         
         tvStats.setText(sb.toString());
     }
