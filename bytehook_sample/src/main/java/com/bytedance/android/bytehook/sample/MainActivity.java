@@ -235,4 +235,9 @@ public class MainActivity extends AppCompatActivity {
         Intent intent = new Intent(this, SoHookTestActivity.class);
         startActivity(intent);
     }
+
+    public void onSoHookWebTestClick(View view) {
+        Intent intent = new Intent(this, SoHookWebTestActivity.class);
+        startActivity(intent);
+    }
 }

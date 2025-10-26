@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { MemoryRecord } from '../types';
+import type { MemoryRecord } from '../types/index';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { AlertTriangle, ChevronDown, ChevronUp, Copy } from 'lucide-react';
@@ -33,17 +33,17 @@ function LeakItem({ leak }: { leak: MemoryRecord }) {
   const [isExpanded, setIsExpanded] = useState(false);
 
   return (
-    <div className="border rounded-lg p-4 hover:bg-muted/50 transition-colors">
+    <div className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors bg-white">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-2">
-            <code className="text-sm font-mono bg-muted px-2 py-1 rounded">
+            <code className="text-sm font-mono bg-gray-100 text-gray-900 px-2 py-1 rounded">
               {leak.ptr}
             </code>
             <Badge variant="destructive">{formatBytes(leak.size)}</Badge>
           </div>
           {leak.timestamp > 0 && (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-gray-600">
               分配时间: {formatTimestamp(leak.timestamp)}
             </p>
           )}
@@ -64,9 +64,9 @@ function LeakItem({ leak }: { leak: MemoryRecord }) {
       </div>
 
       {isExpanded && leak.backtrace && leak.backtrace.length > 0 && (
-        <div className="mt-4 pt-4 border-t">
+        <div className="mt-4 pt-4 border-t border-gray-200">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-sm font-medium">调用栈:</p>
+            <p className="text-sm font-medium text-gray-900">调用栈:</p>
             <Button
               size="sm"
               variant="ghost"
@@ -76,8 +76,8 @@ function LeakItem({ leak }: { leak: MemoryRecord }) {
               复制
             </Button>
           </div>
-          <div className="bg-muted rounded-md p-3 max-h-60 overflow-y-auto">
-            <pre className="text-xs font-mono whitespace-pre-wrap">
+          <div className="bg-gray-50 border border-gray-200 rounded-md p-3 max-h-60 overflow-y-auto">
+            <pre className="text-xs font-mono whitespace-pre-wrap text-gray-800">
               {leak.backtrace.map((frame, idx) => (
                 <div key={idx} className="py-0.5">
                   #{idx} {frame}
@@ -132,7 +132,7 @@ export function LeaksList({ leaks, isLoading }: LeaksListProps) {
       </CardHeader>
       <CardContent>
         {leaks.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
+          <div className="text-center py-8 text-gray-600">
             <p className="text-lg mb-2">🎉 太棒了！</p>
             <p>未检测到内存泄漏</p>
           </div>

@@ -37,7 +37,7 @@ export function ConnectionStatus() {
       <CardContent>
         <div className="space-y-4">
           <div>
-            <label className="text-sm font-medium text-muted-foreground">
+            <label className="text-sm font-medium text-gray-700">
               服务器地址
             </label>
             {isEditing ? (
@@ -46,7 +46,7 @@ export function ConnectionStatus() {
                   type="text"
                   value={inputUrl}
                   onChange={(e) => setInputUrl(e.target.value)}
-                  className="flex-1 px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
+                  className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                   placeholder="http://localhost:8080"
                 />
                 <Button size="sm" onClick={handleSave}>
@@ -65,7 +65,7 @@ export function ConnectionStatus() {
               </div>
             ) : (
               <div className="flex items-center gap-2 mt-2">
-                <code className="flex-1 px-3 py-2 text-sm bg-muted rounded-md">
+                <code className="flex-1 px-3 py-2 text-sm bg-gray-100 text-gray-900 rounded-md border border-gray-200">
                   {serverUrl}
                 </code>
                 <Button
@@ -90,9 +90,9 @@ export function ConnectionStatus() {
             </Button>
           </div>
 
-          <div className="text-xs text-muted-foreground">
-            <p>💡 提示：</p>
-            <ul className="list-disc list-inside space-y-1 mt-1">
+          <div className="text-xs text-gray-600 bg-blue-50 p-3 rounded-md border border-blue-200">
+            <p className="font-semibold text-gray-900 mb-1">💡 提示：</p>
+            <ul className="list-disc list-inside space-y-1">
               <li>确保 Android 设备已启动 HTTP 服务</li>
               <li>使用设备的 IP 地址（如 192.168.1.100:8080）</li>
               <li>确保设备和电脑在同一网络</li>

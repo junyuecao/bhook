@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { MemoryStats, MemoryRecord } from '../types';
+import type { MemoryStats, MemoryRecord } from '../types/index';
 import { apiClient } from '../services/api';
 
 interface MemoryStore {

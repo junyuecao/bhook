@@ -54,14 +54,14 @@ export function Dashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
       <div className="container mx-auto px-4 py-8">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
+          <h1 className="text-4xl font-bold text-gray-900 mb-2">
             SoHook 内存监控
           </h1>
-          <p className="text-lg text-gray-600 dark:text-gray-300">
+          <p className="text-lg text-gray-700">
             实时监控 Android 应用内存泄漏
           </p>
         </div>
@@ -111,7 +111,7 @@ export function Dashboard() {
         </div>
 
         {/* Footer */}
-        <div className="mt-8 text-center text-sm text-gray-600 dark:text-gray-400">
+        <div className="mt-8 text-center text-sm text-gray-600">
           <p>
             💡 提示：数据每 {refreshInterval / 1000} 秒自动刷新
           </p>

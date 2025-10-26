@@ -108,6 +108,12 @@
                 android:text="SoHook 内存泄漏检测测试"
                 tools:ignore="UsingOnClickInXml" />
 
+            <Button style="@style/Theme.Button.Red"
+                android:id="@+id/soHookWebTest"
+                android:onClick="onSoHookWebTestClick"
+                android:text="🌐 SoHook Web 监控测试"
+                tools:ignore="UsingOnClickInXml" />
+
         </LinearLayout>
     </ScrollView>
 </LinearLayout>

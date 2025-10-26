@@ -1,5 +1,5 @@
-import axios, { AxiosInstance } from 'axios';
-import { MemoryStats, MemoryRecord, ApiResponse } from '../types';
+import axios, { type AxiosInstance } from 'axios';
+import type { MemoryStats, MemoryRecord, ApiResponse } from '../types/index';
 
 // API 客户端配置
 const DEFAULT_BASE_URL = 'http://localhost:8080';

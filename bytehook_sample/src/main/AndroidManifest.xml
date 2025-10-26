@@ -21,6 +21,10 @@
             android:name=".SoHookTestActivity"
             android:exported="false"
             android:label="SoHook 内存泄漏检测测试" />
+        <activity
+            android:name=".SoHookWebTestActivity"
+            android:exported="false"
+            android:label="SoHook Web 监控测试" />
     </application>
 
 </manifest>
