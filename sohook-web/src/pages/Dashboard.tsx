@@ -57,47 +57,48 @@ export function Dashboard() {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
       <div className="container mx-auto px-4 py-8">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">
-            SoHook 内存监控
-          </h1>
-          <p className="text-lg text-gray-700">
-            实时监控 Android 应用内存泄漏
-          </p>
-        </div>
-
-        {/* Actions */}
-        <div className="flex gap-3 mb-6">
-          <Button
-            onClick={handleRefresh}
-            disabled={!isConnected || isLoading}
-            className="gap-2"
-          >
-            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-            刷新数据
-          </Button>
-          <Button
-            onClick={handleReset}
-            disabled={!isConnected || isLoading}
-            variant="destructive"
-            className="gap-2"
-          >
-            <Trash2 className="h-4 w-4" />
-            重置统计
-          </Button>
+        <div className="mb-8 flex items-start justify-between">
+          <div>
+            <h1 className="text-4xl font-bold text-gray-900 mb-2">
+              SoHook 内存监控
+            </h1>
+            <p className="text-lg text-gray-700">
+              实时监控 Android 应用内存泄漏
+            </p>
+          </div>
+          
+          {/* Actions */}
+          <div className="flex gap-3">
+            <Button
+              onClick={handleRefresh}
+              disabled={!isConnected || isLoading}
+              className="gap-2"
+            >
+              <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+              刷新数据
+            </Button>
+            <Button
+              onClick={handleReset}
+              disabled={!isConnected || isLoading}
+              variant="destructive"
+              className="gap-2"
+            >
+              <Trash2 className="h-4 w-4" />
+              重置统计
+            </Button>
+          </div>
         </div>
 
         {/* Content */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column - Connection Status */}
-          <div className="lg:col-span-1">
+          {/* Left Column - Connection Status & Memory Stats */}
+          <div className="lg:col-span-1 space-y-6">
             <ConnectionStatus />
+            <MemoryStatsCard stats={stats} isLoading={isLoading} />
           </div>
 
-          {/* Right Column - Stats, Chart and Leaks */}
+          {/* Right Column - Chart and Leaks */}
           <div className="lg:col-span-2 space-y-6">
-            <MemoryStatsCard stats={stats} isLoading={isLoading} />
-            
             {/* Memory Trend Chart */}
             {stats && (
               <MemoryChart

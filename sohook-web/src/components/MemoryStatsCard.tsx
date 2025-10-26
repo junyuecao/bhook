@@ -81,17 +81,17 @@ const MemoryStatsCardComponent = ({ stats, isLoading }: MemoryStatsCardProps) =>
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 gap-3">
           {statItems.map((item) => (
             <div
               key={item.label}
-              className="flex items-start gap-3 p-4 rounded-lg bg-gray-50 border border-gray-200"
+              className="flex flex-col gap-2 p-3 rounded-lg bg-gray-50 border border-gray-200"
             >
-              <item.icon className={`h-5 w-5 mt-0.5 ${item.color}`} />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-gray-600">{item.label}</p>
-                <p className="text-xl font-semibold text-gray-900 truncate">{item.value}</p>
+              <div className="flex items-center gap-2">
+                <item.icon className={`h-4 w-4 ${item.color} flex-shrink-0`} />
+                <p className="text-xs text-gray-600 truncate">{item.label}</p>
               </div>
+              <p className="text-base font-semibold text-gray-900 truncate">{item.value}</p>
             </div>
           ))}
         </div>
