@@ -62,8 +62,9 @@ dependencies {
     implementation 'com.google.android.material:material:1.10.0'
     
     // 依赖bytehook库
+//    implementation "com.bytedance:bytehook:1.1.1"
     implementation project(':bytehook')
-    
+
     // NanoHTTPD - 轻量级 HTTP 服务器
     implementation 'org.nanohttpd:nanohttpd:2.3.1'
     

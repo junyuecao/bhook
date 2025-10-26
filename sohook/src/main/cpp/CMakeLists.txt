@@ -19,7 +19,6 @@ set(DEFAULT_WARNING_FLAGS -Wno-unused-parameter -Wno-implicit-int-float-conversi
 add_compile_options(-Wall -Wextra -Werror)
 
  if(DEPENDENCY_ON_LOCAL_LIBRARY)
-     message("CJY")
      include(${CMAKE_CURRENT_SOURCE_DIR}/../../../../bytehook/local_dependency.cmake)
  else()
      find_package(bytehook REQUIRED CONFIG)
