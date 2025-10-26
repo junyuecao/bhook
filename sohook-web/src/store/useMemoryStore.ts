@@ -1,12 +1,12 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { MemoryStats, MemoryRecord } from '../types/index';
+import type { MemoryStats, LeakGroup } from '../types/index';
 import { apiClient } from '../services/api';
 
 interface MemoryStore {
   // 状态
   stats: MemoryStats | null;
-  leaks: MemoryRecord[];
+  leaks: LeakGroup[];  // 改为泄漏分组
   isConnected: boolean;
   isLoading: boolean;
   error: string | null;
@@ -77,7 +77,6 @@ export const useMemoryStore = create<MemoryStore>()(
       });
     }
   },
-
   // 获取泄漏列表
   fetchLeaks: async () => {
     set({ isLoading: true, error: null });
@@ -92,7 +91,6 @@ export const useMemoryStore = create<MemoryStore>()(
       });
     }
   },
-
   // 重置统计
   resetStats: async () => {
     set({ isLoading: true, error: null });

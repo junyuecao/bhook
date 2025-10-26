@@ -8,12 +8,19 @@ export interface MemoryStats {
   currentAllocSize: number;
 }
 
-// 内存记录
+// 内存记录（单个泄漏）
 export interface MemoryRecord {
   ptr: string;
   size: number;
   backtrace: string[];
   timestamp: number;
+}
+
+// 泄漏分组（按调用栈聚合）
+export interface LeakGroup {
+  backtrace: string[];
+  count: number;        // 该调用栈的泄漏次数
+  totalSize: number;    // 该调用栈的总泄漏大小
 }
 
 // 内存泄漏报告

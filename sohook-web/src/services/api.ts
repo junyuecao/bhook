@@ -1,5 +1,5 @@
 import axios, { type AxiosInstance } from 'axios';
-import type { MemoryStats, MemoryRecord, ApiResponse } from '../types/index';
+import type { MemoryStats, LeakGroup, ApiResponse } from '../types/index';
 
 // API 客户端配置
 const DEFAULT_BASE_URL = 'http://localhost:8080';
@@ -35,9 +35,9 @@ class SoHookApiClient {
     return response.data.data;
   }
 
-  // 获取泄漏列表
-  async getLeaks(): Promise<MemoryRecord[]> {
-    const response = await this.client.get<ApiResponse<MemoryRecord[]>>('/api/leaks');
+  // 获取泄漏列表（按调用栈聚合）
+  async getLeaks(): Promise<LeakGroup[]> {
+    const response = await this.client.get<ApiResponse<LeakGroup[]>>('/api/leaks');
     return response.data.data;
   }
 

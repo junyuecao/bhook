@@ -1,12 +1,12 @@
 import { useState, memo } from 'react';
-import type { MemoryRecord } from '../types/index';
+import type { LeakGroup } from '../types/index';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { AlertTriangle, ChevronDown, ChevronUp, Copy } from 'lucide-react';
 import { Button } from './ui/button';
 
 interface LeaksListProps {
-  leaks: MemoryRecord[];
+  leaks: LeakGroup[];  // 改为泄漏分组
   isLoading?: boolean;
 }
 
@@ -29,7 +29,7 @@ function copyToClipboard(text: string) {
   navigator.clipboard.writeText(text);
 }
 
-function LeakItem({ leak }: { leak: MemoryRecord }) {
+function LeakItem({ leak }: { leak: LeakGroup }) {
   const [isExpanded, setIsExpanded] = useState(false);
 
   return (
@@ -37,16 +37,16 @@ function LeakItem({ leak }: { leak: MemoryRecord }) {
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-2">
-            <code className="text-sm font-mono bg-gray-100 text-gray-900 px-2 py-1 rounded">
-              {leak.ptr}
-            </code>
-            <Badge variant="destructive">{formatBytes(leak.size)}</Badge>
+            <Badge variant="destructive" className="text-sm">
+              {formatBytes(leak.totalSize || 0)}
+            </Badge>
+            <Badge variant="outline" className="text-sm">
+              {leak.count || 0} 次泄漏
+            </Badge>
           </div>
-          {leak.timestamp > 0 && (
-            <p className="text-xs text-gray-600">
-              分配时间: {formatTimestamp(leak.timestamp)}
-            </p>
-          )}
+          <p className="text-xs text-gray-600">
+            该调用栈共泄漏 {leak.count || 0} 次，总计 {formatBytes(leak.totalSize || 0)}
+          </p>
         </div>
         {leak.backtrace && leak.backtrace.length > 0 && (
           <Button
@@ -94,7 +94,8 @@ function LeakItem({ leak }: { leak: MemoryRecord }) {
 const LeaksListComponent = ({ leaks, isLoading }: LeaksListProps) => {
   // 始终显示列表，不管是否在加载
   const displayLeaks = leaks || [];
-  const totalSize = displayLeaks.reduce((sum, leak) => sum + leak.size, 0);
+  const totalSize = displayLeaks.reduce((sum, leak) => sum + leak.totalSize, 0);
+  const totalCount = displayLeaks.reduce((sum, leak) => sum + leak.count, 0);
 
   return (
     <Card>
@@ -106,8 +107,11 @@ const LeaksListComponent = ({ leaks, isLoading }: LeaksListProps) => {
           </span>
           <div className="flex items-center gap-2">
             <Badge variant={displayLeaks.length > 0 ? 'destructive' : 'secondary'}>
-              {displayLeaks.length} 个泄漏
+              {displayLeaks.length} 个调用栈
             </Badge>
+            {totalCount > 0 && (
+              <Badge variant="outline">{totalCount} 次泄漏</Badge>
+            )}
             {totalSize > 0 && (
               <Badge variant="outline">{formatBytes(totalSize)}</Badge>
             )}
@@ -146,10 +150,10 @@ export const LeaksList = memo(LeaksListComponent, (prevProps, nextProps) => {
     return true;
   }
   
-  // 比较数组内容（简单比较指针地址）
+  // 比较数组内容（比较调用栈和总大小）
   for (let i = 0; i < prevProps.leaks.length; i++) {
-    if (prevProps.leaks[i].ptr !== nextProps.leaks[i].ptr ||
-        prevProps.leaks[i].size !== nextProps.leaks[i].size) {
+    if (prevProps.leaks[i].count !== nextProps.leaks[i].count ||
+        prevProps.leaks[i].totalSize !== nextProps.leaks[i].totalSize) {
       return false;
     }
   }

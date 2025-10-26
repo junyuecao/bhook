@@ -145,7 +145,7 @@ public class SoHookWebServer extends NanoHTTPD {
      * 获取泄漏列表
      */
     private Response handleGetLeaks() {
-        // 从 native 层获取泄漏列表
+        // 从 native 层获取泄漏列表（已聚合）
         List<Map<String, Object>> leaks = getLeaksFromNative();
         return createSuccessResponse(leaks);
     }
@@ -170,6 +170,7 @@ public class SoHookWebServer extends NanoHTTPD {
 
     /**
      * 从 native 层获取泄漏列表（结构化数据）
+     * 按调用栈聚合，并按总泄漏大小排序
      */
     private List<Map<String, Object>> getLeaksFromNative() {
         // 调用 SoHook 的 native 方法获取 JSON 格式的泄漏数据
@@ -181,11 +182,83 @@ public class SoHookWebServer extends NanoHTTPD {
         
         try {
             // 解析 JSON
-            return gson.fromJson(leaksJson, List.class);
+            List<Map<String, Object>> rawLeaks = gson.fromJson(leaksJson, List.class);
+            
+            // 按调用栈聚合
+            Map<String, LeakGroup> groupMap = new HashMap<>();
+            
+            for (Map<String, Object> leak : rawLeaks) {
+                List<String> backtrace = (List<String>) leak.get("backtrace");
+                if (backtrace == null) {
+                    backtrace = new ArrayList<>();
+                }
+                
+                String stackKey = getStackKey(backtrace);
+                
+                LeakGroup group = groupMap.get(stackKey);
+                if (group == null) {
+                    group = new LeakGroup();
+                    group.backtrace = backtrace;
+                    groupMap.put(stackKey, group);
+                }
+                
+                group.count++;
+                Object sizeObj = leak.get("size");
+                long size = 0;
+                if (sizeObj instanceof Double) {
+                    size = ((Double) sizeObj).longValue();
+                } else if (sizeObj instanceof Integer) {
+                    size = ((Integer) sizeObj).longValue();
+                } else if (sizeObj instanceof Long) {
+                    size = (Long) sizeObj;
+                }
+                group.totalSize += size;
+            }
+            
+            // 转换为列表并排序（按总大小降序）
+            List<Map<String, Object>> result = new ArrayList<>();
+            for (LeakGroup group : groupMap.values()) {
+                Map<String, Object> item = new HashMap<>();
+                item.put("backtrace", group.backtrace);
+                item.put("count", group.count);
+                item.put("totalSize", group.totalSize);
+                result.add(item);
+            }
+            
+            // 按总大小降序排序
+            result.sort((a, b) -> {
+                long sizeA = ((Number) a.get("totalSize")).longValue();
+                long sizeB = ((Number) b.get("totalSize")).longValue();
+                return Long.compare(sizeB, sizeA);
+            });
+            
+            return result;
         } catch (Exception e) {
             Log.e(TAG, "Failed to parse leaks JSON", e);
+            e.printStackTrace();
+            // 发生异常时，返回空列表而不是原始数据
             return new ArrayList<>();
         }
+    }
+    
+    /**
+     * 生成调用栈的唯一键
+     */
+    private String getStackKey(List<String> backtrace) {
+        if (backtrace == null || backtrace.isEmpty()) {
+            return "no-stack";
+        }
+        // 使用调用栈的字符串表示作为键
+        return String.join("|", backtrace);
+    }
+    
+    /**
+     * 泄漏分组类
+     */
+    private static class LeakGroup {
+        List<String> backtrace;
+        int count = 0;
+        long totalSize = 0;
     }
 
     /**
