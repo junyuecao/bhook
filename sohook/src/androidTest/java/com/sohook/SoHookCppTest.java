@@ -71,8 +71,8 @@ public class SoHookCppTest {
         
         // 检查统计
         SoHook.MemoryStats stats = SoHook.getMemoryStats();
-        assertTrue("Should have allocations", stats.currentAllocCount > 0);
-        assertTrue("Should have allocated size", stats.currentAllocSize >= 1024);
+        assertEquals("Should have allocations", 1, stats.currentAllocCount);
+        assertEquals("Should have allocated size", 1024, stats.currentAllocSize);
         
         // 释放内存
         TestMemoryCpp.nativeDelete(ptr);
@@ -95,8 +95,8 @@ public class SoHookCppTest {
         
         // 检查统计
         SoHook.MemoryStats stats = SoHook.getMemoryStats();
-        assertTrue("Should have allocations", stats.currentAllocCount > 0);
-        assertTrue("Should have allocated size", stats.currentAllocSize >= 2048);
+        assertEquals("Should have allocations", 1, stats.currentAllocCount);
+        assertEquals("Should have allocated size", 2048, stats.currentAllocSize);
         
         // 释放数组
         TestMemoryCpp.nativeDeleteArray(ptr);
@@ -119,7 +119,7 @@ public class SoHookCppTest {
         
         // 检查统计
         SoHook.MemoryStats stats = SoHook.getMemoryStats();
-        assertTrue("Should have allocations", stats.currentAllocCount > 0);
+        assertEquals("Should have allocations", 1, stats.currentAllocCount);
         
         // 删除对象
         TestMemoryCpp.nativeDeleteObject(ptr);
@@ -143,7 +143,7 @@ public class SoHookCppTest {
         
         // 检查统计
         SoHook.MemoryStats stats = SoHook.getMemoryStats();
-        assertTrue("Should have allocations", stats.currentAllocCount > 0);
+        assertEquals("Should have allocations", 1, stats.currentAllocCount);
         
         // 删除对象数组
         TestMemoryCpp.nativeDeleteObjectArray(ptr);
@@ -169,7 +169,7 @@ public class SoHookCppTest {
         // 检查统计（应该有 count 次分配）
         SoHook.MemoryStats stats = SoHook.getMemoryStats();
         assertEquals("Should have " + count + " allocations", count, stats.currentAllocCount);
-        assertTrue("Should have allocated size", stats.currentAllocSize >= count * size);
+        assertEquals("Should have allocated size", count * size, stats.currentAllocSize);
         
         Log.i(TAG, "testNewMultiple passed (intentional leaks for testing)");
     }
@@ -187,7 +187,7 @@ public class SoHookCppTest {
         
         // 检查统计
         SoHook.MemoryStats stats = SoHook.getMemoryStats();
-        assertTrue("Should have allocations", stats.currentAllocCount >= count);
+        assertEquals("Should have allocations", count, stats.currentAllocCount);
         
         // 删除所有对象
         TestMemoryCpp.nativeDeleteObjects(ptrs);
@@ -215,9 +215,9 @@ public class SoHookCppTest {
         long ptr3 = TestMemoryCpp.nativeLeakObjectArray(3);
         assertTrue("Leak object array should succeed", ptr3 != 0);
         
-        // 检查统计
+        // 检查统计（3个泄漏：1个new + 1个对象 + 1个对象数组）
         SoHook.MemoryStats stats = SoHook.getMemoryStats();
-        assertTrue("Should detect leaks", stats.currentAllocCount > 0);
+        assertEquals("Should detect leaks", 3, stats.currentAllocCount);
         assertTrue("Should have leaked size", stats.currentAllocSize > 0);
         
         Log.i(TAG, "Detected " + stats.currentAllocCount + " leaks, total size: " + stats.currentAllocSize + " bytes");
@@ -242,7 +242,7 @@ public class SoHookCppTest {
         
         // 检查统计
         SoHook.MemoryStats stats = SoHook.getMemoryStats();
-        assertTrue("Should have allocations", stats.currentAllocCount >= 4);
+        assertEquals("Should have allocations", 4, stats.currentAllocCount);
         
         // 释放（使用正确的 delete）
         TestMemoryCpp.nativeDelete(ptr1);

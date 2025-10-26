@@ -13,7 +13,7 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(DEFAULT_WARNING_FLAGS -Wno-unused-parameter -Wno-implicit-int-float-conversion)
+set(DEFAULT_WARNING_FLAGS -Wno-unused-parameter -Wno-implicit-int-float-conversion -Wno-unused-variable)
 
 # 添加编译选项
 add_compile_options(-Wall -Wextra -Werror)
