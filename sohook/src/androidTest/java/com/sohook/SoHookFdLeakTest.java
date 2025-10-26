@@ -95,12 +95,8 @@ public class SoHookFdLeakTest {
         SoHook.FdStats stats = SoHook.getFdStats();
         Log.i(TAG, "Stats after close: " + stats.toString());
         
-        if (stats.totalOpenCount == 0) {
-            Log.w(TAG, "Warning: No FD operations tracked. Hook may not be working.");
-        } else {
-            assertTrue("Should have opened files", stats.totalOpenCount > 0);
-            assertTrue("Should have closed files", stats.totalCloseCount > 0);
-        }
+        assertTrue("Should have opened files", stats.totalOpenCount > 0);
+        assertTrue("Should have closed files", stats.totalCloseCount > 0);
         
         Log.i(TAG, "testBasicFileOpen passed");
         
@@ -138,14 +134,8 @@ public class SoHookFdLeakTest {
         SoHook.FdStats stats = SoHook.getFdStats();
         Log.i(TAG, "Stats after read: " + stats.toString());
         
-        // 如果统计为0，说明hook可能没生效，但测试仍然通过（只是警告）
-        if (stats.totalOpenCount == 0) {
-            Log.w(TAG, "Warning: No FD operations tracked. Hook may not be working.");
-            Log.w(TAG, "This could be normal if the test library is not properly hooked.");
-        } else {
-            assertTrue("Should have opened files", stats.totalOpenCount >= 2);
-            assertTrue("Should have closed files", stats.totalCloseCount >= 2);
-        }
+        assertTrue("Should have opened files", stats.totalOpenCount >= 2);
+        assertTrue("Should have closed files", stats.totalCloseCount >= 2);
         
         Log.i(TAG, "testFileReadWrite passed");
         
@@ -178,14 +168,10 @@ public class SoHookFdLeakTest {
         assertNotNull("Leak report should not be null", report);
         Log.i(TAG, "Leak Report:\n" + report);
         
-        if (stats.totalOpenCount == 0) {
-            Log.w(TAG, "Warning: No FD operations tracked. Hook may not be working.");
-        } else {
-            assertTrue("Should have opened files", stats.totalOpenCount >= 2);
-            assertTrue("Should have leaked files", stats.currentOpenCount >= 2);
-            assertTrue("Report should contain leak info", report.contains("File Descriptor Leak Report"));
-            Log.i(TAG, "Detected FD leaks: " + stats.currentOpenCount);
-        }
+        assertTrue("Should have opened files", stats.totalOpenCount >= 2);
+        assertTrue("Should have leaked files", stats.currentOpenCount >= 2);
+        assertTrue("Report should contain leak info", report.contains("File Descriptor Leak Report"));
+        Log.i(TAG, "Detected FD leaks: " + stats.currentOpenCount);
         
         Log.i(TAG, "testFileLeak passed");
         
@@ -216,21 +202,14 @@ public class SoHookFdLeakTest {
         int closed = TestFd.nativeCloseMultiple(fds, fileCount);
         assertEquals("Should close all files", fileCount, closed);
         
-        // 检查统计
-        SoHook.FdStats stats = SoHook.getFdStats();
-        Log.i(TAG, "Stats after close: " + stats.toString());
-        
-        if (stats.totalOpenCount == 0) {
-            Log.w(TAG, "Warning: No FD operations tracked. Hook may not be working.");
-        } else {
-            assertTrue("Should have opened multiple files", stats.totalOpenCount >= fileCount);
-            assertTrue("Should have closed files", stats.totalCloseCount >= fileCount);
-        }
-        
         Log.i(TAG, "testMultipleFiles passed");
         
         // 清理文件
         for (int i = 0; i < fileCount; i++) {
+            File file = new File(pathPrefix + "_" + i + ".tmp");
+            if (file.exists()) {
+                assertTrue("File should be deleted", file.delete());
+            }
             new File(pathPrefix + "_" + i + ".tmp").delete();
         }
     }
@@ -384,12 +363,8 @@ public class SoHookFdLeakTest {
         SoHook.FdStats stats = SoHook.getFdStats();
         Log.i(TAG, "Stats after fclose: " + stats.toString());
         
-        if (stats.totalOpenCount == 0) {
-            Log.w(TAG, "Warning: No FD operations tracked. Hook may not be working.");
-        } else {
-            assertTrue("Should have opened files", stats.totalOpenCount > 0);
-            assertTrue("Should have closed files", stats.totalCloseCount > 0);
-        }
+        assertTrue("Should have opened files", stats.totalOpenCount > 0);
+        assertTrue("Should have closed files", stats.totalCloseCount > 0);
         
         Log.i(TAG, "testFopenFclose passed");
         
@@ -422,15 +397,12 @@ public class SoHookFdLeakTest {
         assertNotNull("Leak report should not be null", report);
         Log.i(TAG, "Leak Report:\n" + report);
         
-        if (stats.totalOpenCount == 0) {
-            Log.w(TAG, "Warning: No FD operations tracked. Hook may not be working.");
-        } else {
-            assertTrue("Should have opened files", stats.totalOpenCount >= 2);
-            assertTrue("Should have leaked files", stats.currentOpenCount >= 2);
-            assertTrue("Report should contain leak info", report.contains("File Descriptor Leak Report"));
-            Log.i(TAG, "Detected FD leaks: " + stats.currentOpenCount);
-        }
-        
+
+        assertTrue("Should have opened files", stats.totalOpenCount >= 2);
+        assertTrue("Should have leaked files", stats.currentOpenCount >= 2);
+        assertTrue("Report should contain leak info", report.contains("File Descriptor Leak Report"));
+        Log.i(TAG, "Detected FD leaks: " + stats.currentOpenCount);
+
         Log.i(TAG, "testFopenLeak passed");
         
         testFile1.delete();
@@ -469,12 +441,8 @@ public class SoHookFdLeakTest {
         SoHook.FdStats stats = SoHook.getFdStats();
         Log.i(TAG, "Stats after fclose: " + stats.toString());
         
-        if (stats.totalOpenCount == 0) {
-            Log.w(TAG, "Warning: No FD operations tracked. Hook may not be working.");
-        } else {
-            assertTrue("Should have opened files", stats.totalOpenCount >= fileCount);
-            assertTrue("Should have closed files", stats.totalCloseCount >= fileCount);
-        }
+        assertTrue("Should have opened files", stats.totalOpenCount >= fileCount);
+        assertTrue("Should have closed files", stats.totalCloseCount >= fileCount);
         
         Log.i(TAG, "testFopenMultiple passed");
         

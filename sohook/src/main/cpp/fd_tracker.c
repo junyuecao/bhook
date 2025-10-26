@@ -35,6 +35,10 @@ static fd_record_t *g_fd_list = NULL;
 // 防止重入的标志
 static __thread bool g_in_hook = false;
 
+// 追踪调用深度，用于去重（防止 fopen->open 重复记录）
+static __thread int g_open_depth = 0;
+static __thread int g_close_depth = 0;
+
 // bytehook stub数组
 #define MAX_HOOKS 64
 static bytehook_stub_t g_stubs[MAX_HOOKS];
@@ -129,6 +133,9 @@ static void remove_fd_record(int fd) {
 // ============================================
 
 int open_proxy(const char *pathname, int flags, ...) {
+  // 增加打开深度
+  g_open_depth++;
+  
   // 处理可变参数（mode）
   mode_t mode = 0;
   if (flags & O_CREAT) {
@@ -146,23 +153,88 @@ int open_proxy(const char *pathname, int flags, ...) {
     fd = BYTEHOOK_CALL_PREV(open_proxy, int (*)(const char *, int), pathname, flags);
   }
 
-  // 记录成功打开的文件描述符
-  if (fd >= 0 && g_initialized && !g_in_hook) {
+  // 只在深度为1时记录（避免 fopen->open 重复记录）
+  if (fd >= 0 && g_initialized && !g_in_hook && g_open_depth == 1) {
     add_fd_record(fd, pathname, flags);
   }
+
+  // 减少打开深度
+  g_open_depth--;
 
   BYTEHOOK_POP_STACK();
   return fd;
 }
 
 int close_proxy(int fd) {
-  // 先移除记录
-  if (g_initialized && !g_in_hook) {
+  // 增加关闭深度
+  g_close_depth++;
+  
+  // 只在深度为1时移除记录（避免 fclose->close 重复记录）
+  if (g_initialized && !g_in_hook && g_close_depth == 1) {
     remove_fd_record(fd);
   }
 
   // 调用原始函数
   int result = BYTEHOOK_CALL_PREV(close_proxy, int (*)(int), fd);
+
+  // 减少关闭深度
+  g_close_depth--;
+
+  BYTEHOOK_POP_STACK();
+  return result;
+}
+
+FILE* fopen_proxy(const char *pathname, const char *mode) {
+  // 增加打开深度，防止底层的open重复记录
+  g_open_depth++;
+  
+  // 调用原始函数（内部会调用open）
+  FILE* fp = BYTEHOOK_CALL_PREV(fopen_proxy, FILE* (*)(const char *, const char *), pathname, mode);
+
+  // 在顶层（深度为1）记录文件
+  if (fp != NULL && g_initialized && !g_in_hook && g_open_depth == 1) {
+    int fd = fileno(fp);
+    if (fd >= 0) {
+      // 根据mode确定flags
+      int flags = 0;
+      if (strchr(mode, 'r') && strchr(mode, '+')) {
+        flags = O_RDWR;
+      } else if (strchr(mode, 'r')) {
+        flags = O_RDONLY;
+      } else if (strchr(mode, 'w') || strchr(mode, 'a')) {
+        flags = O_WRONLY;
+        if (strchr(mode, '+')) {
+          flags = O_RDWR;
+        }
+      }
+      add_fd_record(fd, pathname, flags);
+    }
+  }
+
+  // 减少打开深度
+  g_open_depth--;
+
+  BYTEHOOK_POP_STACK();
+  return fp;
+}
+
+int fclose_proxy(FILE *fp) {
+  // 增加关闭深度，防止底层的close重复记录
+  g_close_depth++;
+  
+  // 在顶层（深度为1）移除记录
+  if (fp != NULL && g_initialized && !g_in_hook && g_close_depth == 1) {
+    int fd = fileno(fp);
+    if (fd >= 0) {
+      remove_fd_record(fd);
+    }
+  }
+
+  // 调用原始函数（内部会调用close）
+  int result = BYTEHOOK_CALL_PREV(fclose_proxy, int (*)(FILE *), fp);
+
+  // 减少关闭深度
+  g_close_depth--;
 
   BYTEHOOK_POP_STACK();
   return result;
@@ -210,8 +282,8 @@ int fd_tracker_hook(const char **so_names, int count) {
       continue;
     }
 
-    if (g_stub_count >= MAX_HOOKS - 1) {
-      LOGE("Too many hooks, max=%d", MAX_HOOKS);
+    if (g_stub_count >= MAX_HOOKS - 6) {
+      LOGE("Too many hooks, max=%d, current=%d", MAX_HOOKS, g_stub_count);
       pthread_mutex_unlock(&g_mutex);
       return -1;
     }
@@ -251,6 +323,26 @@ int fd_tracker_hook(const char **so_names, int count) {
       LOGI("Hooked close in %s", so_names[i]);
     } else {
       LOGE("Failed to hook close in %s", so_names[i]);
+    }
+
+    // Hook fopen
+    bytehook_stub_t stub_fopen =
+        bytehook_hook_single(so_names[i], NULL, "fopen", (void *)fopen_proxy, NULL, NULL);
+    if (stub_fopen != NULL) {
+      g_stubs[g_stub_count++] = stub_fopen;
+      LOGI("Hooked fopen in %s", so_names[i]);
+    } else {
+      LOGE("Failed to hook fopen in %s", so_names[i]);
+    }
+
+    // Hook fclose
+    bytehook_stub_t stub_fclose =
+        bytehook_hook_single(so_names[i], NULL, "fclose", (void *)fclose_proxy, NULL, NULL);
+    if (stub_fclose != NULL) {
+      g_stubs[g_stub_count++] = stub_fclose;
+      LOGI("Hooked fclose in %s", so_names[i]);
+    } else {
+      LOGE("Failed to hook fclose in %s", so_names[i]);
     }
   }
 
