@@ -50,6 +50,10 @@ static int g_hook_count = 0;
 // 防止递归调用的标志
 static __thread bool g_in_hook = false;
 
+// 追踪调用深度，用于去重（防止 new->malloc 重复记录）
+static __thread int g_alloc_depth = 0;
+static __thread int g_free_depth = 0;
+
 // 原始函数指针
 static void *(*original_malloc)(size_t) = NULL;
 static void (*original_free)(void *) = NULL;
@@ -133,15 +137,22 @@ static void remove_memory_record(void *ptr) {
 
 // malloc hook函数
 void *malloc_proxy(size_t size) {
-  if (g_debug && !g_in_hook) {
-    LOGD("malloc_proxy called: size=%zu", size);
+  // 增加分配深度
+  g_alloc_depth++;
+  
+  if (g_debug && !g_in_hook && g_alloc_depth == 1) {
+    LOGD("malloc_proxy called: size=%zu, depth=%d", size, g_alloc_depth);
   }
   
   void *result = BYTEHOOK_CALL_PREV(malloc_proxy, void *(*)(size_t), size);
   
-  if (result != NULL && !g_in_hook) {
+  // 只在深度为1时记录（避免 new->malloc 重复记录）
+  if (result != NULL && !g_in_hook && g_alloc_depth == 1) {
     add_memory_record(result, size);
   }
+  
+  // 减少分配深度
+  g_alloc_depth--;
   
   BYTEHOOK_POP_STACK();
   return result;
@@ -149,25 +160,44 @@ void *malloc_proxy(size_t size) {
 
 // calloc hook函数
 void *calloc_proxy(size_t nmemb, size_t size) {
+  // 增加分配深度
+  g_alloc_depth++;
+  
   void *result = BYTEHOOK_CALL_PREV(calloc_proxy, void *(*)(size_t, size_t), nmemb, size);
-  if (result != NULL && !g_in_hook) {
+  
+  // 只在深度为1时记录
+  if (result != NULL && !g_in_hook && g_alloc_depth == 1) {
     add_memory_record(result, nmemb * size);
   }
+  
+  // 减少分配深度
+  g_alloc_depth--;
+  
   BYTEHOOK_POP_STACK();
   return result;
 }
 
 // realloc hook函数
 void *realloc_proxy(void *ptr, size_t size) {
-  if (ptr != NULL && !g_in_hook) {
+  // 增加深度（realloc 既是 free 又是 alloc）
+  g_alloc_depth++;
+  g_free_depth++;
+  
+  // 只在深度为1时移除旧记录
+  if (ptr != NULL && !g_in_hook && g_free_depth == 1) {
     remove_memory_record(ptr);
   }
 
   void *result = BYTEHOOK_CALL_PREV(realloc_proxy, void *(*)(void *, size_t), ptr, size);
 
-  if (result != NULL && !g_in_hook) {
+  // 只在深度为1时添加新记录
+  if (result != NULL && !g_in_hook && g_alloc_depth == 1) {
     add_memory_record(result, size);
   }
+
+  // 减少深度
+  g_alloc_depth--;
+  g_free_depth--;
 
   BYTEHOOK_POP_STACK();
   return result;
@@ -175,47 +205,95 @@ void *realloc_proxy(void *ptr, size_t size) {
 
 // free hook函数
 void free_proxy(void *ptr) {
-  if (ptr != NULL && !g_in_hook) {
+  // 增加释放深度
+  g_free_depth++;
+  
+  // 只在深度为1时移除记录
+  if (ptr != NULL && !g_in_hook && g_free_depth == 1) {
     remove_memory_record(ptr);
   }
+  
   BYTEHOOK_CALL_PREV(free_proxy, void (*)(void *), ptr);
+  
+  // 减少释放深度
+  g_free_depth--;
+  
   BYTEHOOK_POP_STACK();
 }
 
+// C++ operator new hook (符号: _Znwm 或 _Znwj，取决于架构)
+// 在这里记录，然后增加深度，这样底层的 malloc 就不会重复记录
 void *operator_new_proxy(size_t size) {
+  // 先记录（深度为0）
+  g_alloc_depth++;
+  
+  if (g_debug && !g_in_hook) {
+    LOGD("operator_new_proxy called: size=%zu, depth=%d", size, g_alloc_depth);
+  }
+  
   void *result = BYTEHOOK_CALL_PREV(operator_new_proxy, void *(*)(size_t), size);
-  if (result != NULL && !g_in_hook) {
+  
+  // 只在深度为1时记录（顶层调用）
+  if (result != NULL && !g_in_hook && g_alloc_depth == 1) {
     add_memory_record(result, size);
   }
+  
+  g_alloc_depth--;
+  
   BYTEHOOK_POP_STACK();
   return result;
 }
 
 // C++ operator new[] hook (符号: _Znam 或 _Znaj)
 void *operator_new_array_proxy(size_t size) {
+  g_alloc_depth++;
+  
+  if (g_debug && !g_in_hook) {
+    LOGD("operator_new_array_proxy called: size=%zu, depth=%d", size, g_alloc_depth);
+  }
+  
   void *result = BYTEHOOK_CALL_PREV(operator_new_array_proxy, void *(*)(size_t), size);
-  if (result != NULL && !g_in_hook) {
+  
+  // 只在深度为1时记录
+  if (result != NULL && !g_in_hook && g_alloc_depth == 1) {
     add_memory_record(result, size);
   }
+  
+  g_alloc_depth--;
+  
   BYTEHOOK_POP_STACK();
   return result;
 }
 
 // C++ operator delete hook (符号: _ZdlPv)
 void operator_delete_proxy(void *ptr) {
-  if (ptr != NULL && !g_in_hook) {
+  g_free_depth++;
+  
+  // 只在深度为1时移除记录
+  if (ptr != NULL && !g_in_hook && g_free_depth == 1) {
     remove_memory_record(ptr);
   }
+  
   BYTEHOOK_CALL_PREV(operator_delete_proxy, void (*)(void *), ptr);
+  
+  g_free_depth--;
+  
   BYTEHOOK_POP_STACK();
 }
 
 // C++ operator delete[] hook (符号: _ZdaPv)
 void operator_delete_array_proxy(void *ptr) {
-  if (ptr != NULL && !g_in_hook) {
+  g_free_depth++;
+  
+  // 只在深度为1时移除记录
+  if (ptr != NULL && !g_in_hook && g_free_depth == 1) {
     remove_memory_record(ptr);
   }
+  
   BYTEHOOK_CALL_PREV(operator_delete_array_proxy, void (*)(void *), ptr);
+  
+  g_free_depth--;
+  
   BYTEHOOK_POP_STACK();
 }
 

@@ -16,6 +16,8 @@ import java.util.Collections;
 
 import static org.junit.Assert.*;
 
+import com.sohook.test.TestMemoryHelper;
+
 /**
  * SoHook 基础功能测试
  * 测试初始化、Hook、统计等基本功能

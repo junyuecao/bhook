@@ -241,11 +241,11 @@ public class SoHookWebTestActivity extends AppCompatActivity {
         // C++ operator new[] 泄漏
         NativeHacker.allocWithNewArray(count);
         Log.i(TAG, "创建 " + count + " 个 operator new[] 泄漏");
-        
+
         // C++ new 对象泄漏
         NativeHacker.allocObjects(count);
         Log.i(TAG, "创建 " + count + " 个 new 对象泄漏");
-        
+
         // C++ new[] 对象数组泄漏
         NativeHacker.allocObjectArrays(count);
         Log.i(TAG, "创建 " + count + " 个 new[] 对象数组泄漏");

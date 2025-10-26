@@ -15,6 +15,8 @@ import java.util.Collections;
 
 import static org.junit.Assert.*;
 
+import com.sohook.test.TestMemoryHelper;
+
 /**
  * SoHook 准确性测试
  * 验证内存泄漏检测的准确性

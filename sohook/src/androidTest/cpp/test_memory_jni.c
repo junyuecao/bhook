@@ -10,7 +10,7 @@
 
 // JNI: 分配内存
 JNIEXPORT jlong JNICALL
-Java_com_sohook_TestMemoryHelper_nativeAlloc(JNIEnv *env, jclass clazz, jlong size) {
+Java_com_sohook_test_TestMemoryHelper_nativeAlloc(JNIEnv *env, jclass clazz, jlong size) {
     (void)env;
     (void)clazz;
     
@@ -20,7 +20,7 @@ Java_com_sohook_TestMemoryHelper_nativeAlloc(JNIEnv *env, jclass clazz, jlong si
 
 // JNI: 释放内存
 JNIEXPORT void JNICALL
-Java_com_sohook_TestMemoryHelper_nativeFree(JNIEnv *env, jclass clazz, jlong ptr) {
+Java_com_sohook_test_TestMemoryHelper_nativeFree(JNIEnv *env, jclass clazz, jlong ptr) {
     (void)env;
     (void)clazz;
     
@@ -29,7 +29,7 @@ Java_com_sohook_TestMemoryHelper_nativeFree(JNIEnv *env, jclass clazz, jlong ptr
 
 // JNI: 分配多次
 JNIEXPORT jlong JNICALL
-Java_com_sohook_TestMemoryHelper_nativeAllocMultiple(JNIEnv *env, jclass clazz, jint count, jlong size) {
+Java_com_sohook_test_TestMemoryHelper_nativeAllocMultiple(JNIEnv *env, jclass clazz, jint count, jlong size) {
     (void)env;
     (void)clazz;
     
@@ -39,7 +39,7 @@ Java_com_sohook_TestMemoryHelper_nativeAllocMultiple(JNIEnv *env, jclass clazz, 
 
 // JNI: 故意泄漏
 JNIEXPORT jlong JNICALL
-Java_com_sohook_TestMemoryHelper_nativeLeakMemory(JNIEnv *env, jclass clazz, jlong size) {
+Java_com_sohook_test_TestMemoryHelper_nativeLeakMemory(JNIEnv *env, jclass clazz, jlong size) {
     (void)env;
     (void)clazz;
     
@@ -49,7 +49,7 @@ Java_com_sohook_TestMemoryHelper_nativeLeakMemory(JNIEnv *env, jclass clazz, jlo
 
 // JNI: calloc
 JNIEXPORT jlong JNICALL
-Java_com_sohook_TestMemoryHelper_nativeCalloc(JNIEnv *env, jclass clazz, jlong nmemb, jlong size) {
+Java_com_sohook_test_TestMemoryHelper_nativeCalloc(JNIEnv *env, jclass clazz, jlong nmemb, jlong size) {
     (void)env;
     (void)clazz;
     
@@ -59,23 +59,10 @@ Java_com_sohook_TestMemoryHelper_nativeCalloc(JNIEnv *env, jclass clazz, jlong n
 
 // JNI: realloc
 JNIEXPORT jlong JNICALL
-Java_com_sohook_TestMemoryHelper_nativeRealloc(JNIEnv *env, jclass clazz, jlong ptr, jlong size) {
+Java_com_sohook_test_TestMemoryHelper_nativeRealloc(JNIEnv *env, jclass clazz, jlong ptr, jlong size) {
     (void)env;
     (void)clazz;
     
     void* new_ptr = test_realloc((void*)(uintptr_t)ptr, (size_t)size);
     return (jlong)(uintptr_t)new_ptr;
-}
-
-// JNI_OnLoad
-JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
-    (void)reserved;
-    
-    JNIEnv *env;
-    if ((*vm)->GetEnv(vm, (void **)&env, JNI_VERSION_1_6) != JNI_OK) {
-        return JNI_ERR;
-    }
-    
-    LOGD("TestMemory library loaded");
-    return JNI_VERSION_1_6;
 }

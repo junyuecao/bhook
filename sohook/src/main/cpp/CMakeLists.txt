@@ -69,6 +69,8 @@ if(EXISTS "${TEST_MEMORY_DIR}/test_memory.c")
     add_library(test_memory SHARED
         ${TEST_MEMORY_DIR}/test_memory.c
         ${TEST_MEMORY_DIR}/test_memory_jni.c
+        ${TEST_MEMORY_DIR}/test_memory_cpp.cpp
+        ${TEST_MEMORY_DIR}/test_memory_cpp_jni.c
     )
     
     # 包含头文件
@@ -92,41 +94,4 @@ if(EXISTS "${TEST_MEMORY_DIR}/test_memory.c")
     message(STATUS "✓ test_memory library configured")
 else()
     message(STATUS "Test memory sources not found, skipping test library build")
-endif()
-
-# ============================================
-# 测试库：test_memory_cpp
-# 用于 C++ new/delete 测试的独立库
-# ============================================
-
-# 检查 C++ 测试源文件是否存在
-if(EXISTS "${TEST_MEMORY_DIR}/test_memory_cpp.cpp")
-    message(STATUS "Building test_memory_cpp library for C++ new/delete tests")
-    
-    # 创建 C++ 测试内存库
-    add_library(test_memory_cpp SHARED
-        ${TEST_MEMORY_DIR}/test_memory_cpp.cpp
-        ${TEST_MEMORY_DIR}/test_memory_cpp_jni.c
-    )
-    
-    # 包含头文件
-    target_include_directories(test_memory_cpp PRIVATE
-        ${TEST_MEMORY_DIR}
-    )
-    
-    # 链接库
-    target_link_libraries(test_memory_cpp
-        log
-        android
-    )
-    target_compile_options(test_memory_cpp PUBLIC ${DEFAULT_WARNING_FLAGS})
-
-    # 设置输出目录
-    set_target_properties(test_memory_cpp PROPERTIES
-        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}"
-    )
-    
-    message(STATUS "✓ test_memory_cpp library configured")
-else()
-    message(STATUS "C++ test memory sources not found, skipping C++ test library build")
 endif()

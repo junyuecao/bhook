@@ -1,19 +1,29 @@
 package com.sohook.test;
 
+import android.util.Log;
+
 /**
  * C++ 内存测试辅助类
  * 提供 C++ new/delete 操作的 JNI 接口
  */
 public class TestMemoryCpp {
+    private static final String TAG = "SoHook-TestMemoryCpp";
 
-    static boolean isLoaded = false;
+    private static boolean sLibraryLoaded = false;
+
     static {
-        System.loadLibrary("test_memory_cpp");
-        isLoaded = true;
+        try {
+            System.loadLibrary("test_memory");
+            sLibraryLoaded = true;
+            Log.i(TAG, "test_memory library loaded successfully");
+        } catch (UnsatisfiedLinkError e) {
+            Log.e(TAG, "Failed to load test_memory library", e);
+            sLibraryLoaded = false;
+        }
     }
 
     public static boolean isLibraryLoaded() {
-        return isLoaded;
+        return sLibraryLoaded;
     }
 
     // operator new/delete

@@ -22,7 +22,7 @@ import static org.junit.Assert.*;
 @RunWith(AndroidJUnit4.class)
 public class SoHookCppTest {
     private static final String TAG = "SoHookCppTest";
-    private static final String TEST_LIB = "libtest_memory_cpp.so";
+    private static final String TEST_LIB = "libtest_memory.so";
 
     @Before
     public void setUp() {
@@ -260,7 +260,8 @@ public class SoHookCppTest {
     @Test
     public void testBacktraceCapture() {
         Log.i(TAG, "=== testBacktraceCapture ===");
-        
+        SoHook.setBacktraceEnabled(true);
+
         // 确保 backtrace 已启用
         assertTrue("Backtrace should be enabled", SoHook.isBacktraceEnabled());
         
