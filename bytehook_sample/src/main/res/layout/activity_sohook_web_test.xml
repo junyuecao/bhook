@@ -177,6 +177,15 @@
                     android:layout_marginBottom="8dp"/>
 
                 <Button
+                    android:id="@+id/btn_stress_test"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="💥 压力测试 (100线程持续分配)"
+                    android:onClick="onStressTestClick"
+                    android:backgroundTint="#FF5722"
+                    android:layout_marginBottom="8dp"/>
+
+                <Button
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="🔄 重置统计"

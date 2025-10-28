@@ -33,7 +33,7 @@ void sample_test_strlen(int benchmark) {
 #pragma clang optimize on
 
 // 用于测试内存泄漏检测的函数
-#define MAX_TEST_PTRS 10000
+#define MAX_TEST_PTRS 10000000
 static void *g_test_ptrs[MAX_TEST_PTRS] = {NULL};
 static int g_test_ptr_count = 0;
 

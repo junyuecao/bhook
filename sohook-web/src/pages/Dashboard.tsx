@@ -7,6 +7,7 @@ import { LeaksList } from '../components/LeaksList';
 import { FdLeaksList } from '../components/FdLeaksList';
 import { MemoryChart } from '../components/MemoryChart';
 import { Button } from '../components/ui/button';
+import { Checkbox } from '../components/ui/checkbox';
 import { RefreshCw, Trash2 } from 'lucide-react';
 
 export function Dashboard() {
@@ -25,6 +26,7 @@ export function Dashboard() {
     fetchFdLeaks,
     resetStats,
     checkConnection,
+    setAutoRefresh,
   } = useMemoryStore();
 
   // 初始化时检查连接
@@ -84,24 +86,42 @@ export function Dashboard() {
           </div>
           
           {/* Actions */}
-          <div className="flex gap-3">
-            <Button
-              onClick={handleRefresh}
-              disabled={!isConnected || isLoading}
-              className="gap-2"
-            >
-              <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-              刷新数据
-            </Button>
-            <Button
-              onClick={handleReset}
-              disabled={!isConnected || isLoading}
-              variant="destructive"
-              className="gap-2"
-            >
-              <Trash2 className="h-4 w-4" />
-              重置统计
-            </Button>
+          <div className="flex flex-col gap-3">
+            <div className="flex gap-3">
+              <Button
+                onClick={handleRefresh}
+                disabled={!isConnected || isLoading}
+                className="gap-2"
+              >
+                <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+                刷新数据
+              </Button>
+              <Button
+                onClick={handleReset}
+                disabled={!isConnected || isLoading}
+                variant="destructive"
+                className="gap-2"
+              >
+                <Trash2 className="h-4 w-4" />
+                重置统计
+              </Button>
+            </div>
+            
+            {/* 自动刷新控制 */}
+            <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-lg border shadow-sm">
+              <Checkbox
+                id="auto-refresh"
+                checked={autoRefresh}
+                onCheckedChange={(checked) => setAutoRefresh(checked as boolean)}
+                disabled={!isConnected}
+              />
+              <label
+                htmlFor="auto-refresh"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer select-none"
+              >
+                自动刷新 ({refreshInterval / 1000} 秒)
+              </label>
+            </div>
           </div>
         </div>
 
@@ -132,7 +152,11 @@ export function Dashboard() {
         {/* Footer */}
         <div className="mt-8 text-center text-sm text-gray-600">
           <p>
-            💡 提示：数据每 {refreshInterval / 1000} 秒自动刷新
+            {autoRefresh ? (
+              <>💡 提示：数据每 {refreshInterval / 1000} 秒自动刷新</>
+            ) : (
+              <>⏸️ 自动刷新已暂停，点击"刷新数据"按钮手动更新</>
+            )}
           </p>
         </div>
       </div>

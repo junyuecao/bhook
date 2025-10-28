@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "bytehook.h"
@@ -33,6 +34,18 @@ static bool g_backtrace_enabled = false;
 
 // Hook 管理锁
 static pthread_mutex_t g_hook_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+// dladdr 符号缓存（简单的哈希表）
+#define SYMBOL_CACHE_SIZE 4096
+typedef struct symbol_cache_entry {
+  void *addr;
+  char symbol[256];  // 符号名 + 偏移
+  struct symbol_cache_entry *next;
+} symbol_cache_entry_t;
+
+static symbol_cache_entry_t *g_symbol_cache[SYMBOL_CACHE_SIZE] = {NULL};
+static pthread_mutex_t g_symbol_cache_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 
 // bytehook stub数组
 #define MAX_HOOKS 64
@@ -609,6 +622,74 @@ void memory_tracker_get_stats(memory_stats_t *stats) {
   memory_stats_get(stats);
 }
 
+
+// 符号缓存辅助函数
+static inline size_t symbol_cache_hash(void *addr) {
+  return ((uintptr_t)addr >> 3) % SYMBOL_CACHE_SIZE;
+}
+
+// 查找符号缓存（无锁，仅读取）
+static const char *symbol_cache_lookup(void *addr) {
+  size_t idx = symbol_cache_hash(addr);
+  symbol_cache_entry_t *entry = g_symbol_cache[idx];
+
+  while (entry != NULL) {
+    if (entry->addr == addr) {
+      return entry->symbol;
+    }
+    entry = entry->next;
+  }
+
+  return NULL;
+}
+
+// 添加到符号缓存
+static void symbol_cache_add(void *addr, const char *symbol) {
+  size_t idx = symbol_cache_hash(addr);
+
+  pthread_mutex_lock(&g_symbol_cache_mutex);
+
+  // 再次检查是否已存在（双重检查）
+  symbol_cache_entry_t *entry = g_symbol_cache[idx];
+  while (entry != NULL) {
+    if (entry->addr == addr) {
+      pthread_mutex_unlock(&g_symbol_cache_mutex);
+      return;  // 已存在
+    }
+    entry = entry->next;
+  }
+
+  // 创建新条目
+  symbol_cache_entry_t *new_entry = (symbol_cache_entry_t *)original_malloc(sizeof(symbol_cache_entry_t));
+  if (new_entry != NULL) {
+    new_entry->addr = addr;
+    strncpy(new_entry->symbol, symbol, sizeof(new_entry->symbol) - 1);
+    new_entry->symbol[sizeof(new_entry->symbol) - 1] = '\0';
+    new_entry->next = g_symbol_cache[idx];
+    g_symbol_cache[idx] = new_entry;
+  }
+
+  pthread_mutex_unlock(&g_symbol_cache_mutex);
+}
+
+// 清理符号缓存
+static void symbol_cache_clear(void) {
+  pthread_mutex_lock(&g_symbol_cache_mutex);
+
+  for (int i = 0; i < SYMBOL_CACHE_SIZE; i++) {
+    symbol_cache_entry_t *entry = g_symbol_cache[i];
+    while (entry != NULL) {
+      symbol_cache_entry_t *next = entry->next;
+      original_free(entry);
+      entry = next;
+    }
+    g_symbol_cache[i] = NULL;
+  }
+
+  pthread_mutex_unlock(&g_symbol_cache_mutex);
+}
+
+
 // 重置统计信息
 void memory_tracker_reset_stats(void) {
   // 清空哈希表中的所有记录（不需要 free，因为使用内存池）
@@ -622,6 +703,9 @@ void memory_tracker_reset_stats(void) {
 
   // 重置统计信息（委托给 memory_stats 模块）
   memory_stats_reset();
+  
+  // 清理符号缓存
+  symbol_cache_clear();
 }
 
 // 启用或禁用栈回溯
@@ -685,18 +769,39 @@ static bool json_callback(memory_record_t *record, void *user_data) {
                                       ctx->buffer_size - ctx->buffer_used, ",");
       }
       
-      // 获取符号信息
-      Dl_info info;
-      if (dladdr(record->backtrace[j], &info) && info.dli_sname) {
+      // 先查找缓存
+      const char *cached_symbol = symbol_cache_lookup(record->backtrace[j]);
+      if (cached_symbol != NULL) {
+        // 缓存命中，直接使用
         ctx->buffer_used += snprintf(ctx->buffer + ctx->buffer_used, 
                                       ctx->buffer_size - ctx->buffer_used,
-                                      "\"%s+%ld\"",
-                                      info.dli_sname,
-                                      (long)((char *)record->backtrace[j] - (char *)info.dli_saddr));
+                                      "\"%s\"", cached_symbol);
       } else {
-        ctx->buffer_used += snprintf(ctx->buffer + ctx->buffer_used, 
-                                      ctx->buffer_size - ctx->buffer_used,
-                                      "\"%p\"", record->backtrace[j]);
+        // 缓存未命中，调用 dladdr
+        Dl_info info;
+        char symbol_buf[256];
+        
+        if (dladdr(record->backtrace[j], &info) && info.dli_sname) {
+          snprintf(symbol_buf, sizeof(symbol_buf), "%s+%ld",
+                   info.dli_sname,
+                   (long)((char *)record->backtrace[j] - (char *)info.dli_saddr));
+          
+          ctx->buffer_used += snprintf(ctx->buffer + ctx->buffer_used, 
+                                        ctx->buffer_size - ctx->buffer_used,
+                                        "\"%s\"", symbol_buf);
+          
+          // 添加到缓存
+          symbol_cache_add(record->backtrace[j], symbol_buf);
+        } else {
+          snprintf(symbol_buf, sizeof(symbol_buf), "%p", record->backtrace[j]);
+          
+          ctx->buffer_used += snprintf(ctx->buffer + ctx->buffer_used, 
+                                        ctx->buffer_size - ctx->buffer_used,
+                                        "\"%s\"", symbol_buf);
+          
+          // 添加到缓存
+          symbol_cache_add(record->backtrace[j], symbol_buf);
+        }
       }
     }
   }
@@ -717,7 +822,7 @@ char *memory_tracker_get_leaks_json(void) {
 
   // 初始化 JSON 上下文
   json_context_t ctx;
-  ctx.buffer_size = 4096;
+  ctx.buffer_size = 8 * 1024 * 1024;  // 8MB，避免频繁扩容（30000个泄漏约6MB）
   ctx.buffer_used = 0;
   ctx.leak_count = 0;
   ctx.first = true;
@@ -731,8 +836,19 @@ char *memory_tracker_get_leaks_json(void) {
   // 开始 JSON 数组
   ctx.buffer_used += snprintf(ctx.buffer, ctx.buffer_size, "[");
 
-  // 遍历哈希表获取所有泄漏记录
+  // 遍历哈希表获取所有泄漏记录（添加耗时统计）
+  struct timespec start_time, end_time;
+  clock_gettime(CLOCK_MONOTONIC, &start_time);
+  
   hash_table_foreach(json_callback, &ctx);
+  
+  clock_gettime(CLOCK_MONOTONIC, &end_time);
+  long elapsed_ms = (end_time.tv_sec - start_time.tv_sec) * 1000 + 
+                    (end_time.tv_nsec - start_time.tv_nsec) / 1000000;
+  
+  if (g_debug || elapsed_ms > 10) {  // 超过10ms时打印警告
+    LOGI("hash_table_foreach took %ld ms, processed %d leaks", elapsed_ms, ctx.leak_count);
+  }
 
   // 结束 JSON 数组
   ctx.buffer_used += snprintf(ctx.buffer + ctx.buffer_used, 

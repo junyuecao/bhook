@@ -35,10 +35,15 @@ public class SoHookWebTestActivity extends AppCompatActivity {
     private TextView tvServerStatus;
     private TextView tvServerUrl;
     private TextView tvStats;
+    private android.widget.Button btnStressTest;
     private boolean isHooked = false;
     private boolean isServerRunning = false;
     private Handler handler = new Handler(Looper.getMainLooper());
     private Runnable updateStatsRunnable;
+    
+    // 压力测试相关
+    private volatile boolean isStressTestRunning = false;
+    private Thread[] stressTestThreads;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -48,6 +53,7 @@ public class SoHookWebTestActivity extends AppCompatActivity {
         tvServerStatus = findViewById(R.id.tv_server_status);
         tvServerUrl = findViewById(R.id.tv_server_url);
         tvStats = findViewById(R.id.tv_stats);
+        btnStressTest = findViewById(R.id.btn_stress_test);
 
         // 初始化 SoHook
         int ret = SoHook.init(true, true); // 启用调试和栈回溯
@@ -75,6 +81,9 @@ public class SoHookWebTestActivity extends AppCompatActivity {
     protected void onDestroy() {
         super.onDestroy();
         handler.removeCallbacks(updateStatsRunnable);
+        
+        // 停止压力测试
+        stopStressTest();
         
         // 停止 Web 服务器
         if (isServerRunning) {
@@ -294,6 +303,187 @@ public class SoHookWebTestActivity extends AppCompatActivity {
                 updateStats();
             }
         }, 500);
+    }
+
+    /**
+     * 压力测试 - 100个线程持续申请小内存
+     */
+    public void onStressTestClick(View view) {
+        if (!isHooked) {
+            showToast("请先开始监控");
+            return;
+        }
+
+        // 如果正在运行，则停止
+        if (isStressTestRunning) {
+            stopStressTest();
+            return;
+        }
+
+        // 显示确认对话框
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("⚠️ 压力测试警告")
+            .setMessage("即将启动多线程压力测试！\n\n" +
+                    "配置：\n" +
+                    "• 线程数: 100 个\n" +
+                    "• 每次分配: 1-10 KB\n" +
+                    "• 分配间隔: 10-50 ms\n" +
+                    "• 持续运行直到手动停止\n\n" +
+                    "这将：\n" +
+                    "• 持续占用内存\n" +
+                    "• 测试 Web 页面实时性能\n" +
+                    "• 模拟真实泄漏场景\n\n" +
+                    "建议先在 Web 页面中打开 Dashboard。\n\n" +
+                    "确定继续？")
+            .setPositiveButton("开始测试", (dialog, which) -> {
+                startStressTest();
+            })
+            .setNegativeButton("取消", null)
+            .show();
+    }
+
+    /**
+     * 启动压力测试
+     */
+    private void startStressTest() {
+        if (isStressTestRunning) {
+            return;
+        }
+
+        isStressTestRunning = true;
+        final int THREAD_COUNT = 100;
+        stressTestThreads = new Thread[THREAD_COUNT];
+        
+        // 更新按钮文本
+        handler.post(() -> {
+            btnStressTest.setText("⏹️ 停止压力测试");
+            btnStressTest.setBackgroundTintList(
+                android.content.res.ColorStateList.valueOf(0xFF4CAF50) // 绿色
+            );
+        });
+        
+        Log.i(TAG, "启动压力测试: " + THREAD_COUNT + " 个线程");
+        showToast("压力测试已启动\n" + THREAD_COUNT + " 个线程持续分配内存");
+        
+        // 启动监控线程，定期更新统计
+        new Thread(() -> {
+            long startTime = System.currentTimeMillis();
+            while (isStressTestRunning) {
+                try {
+                    Thread.sleep(2000); // 每2秒更新一次
+                    
+                    long runningTime = (System.currentTimeMillis() - startTime) / 1000;
+                    handler.post(() -> {
+                        updateStats();
+                        SoHook.MemoryStats stats = SoHook.getMemoryStats();
+                        Log.i(TAG, String.format("压力测试运行中: %d秒, 当前泄漏: %,d 个, %s",
+                                runningTime,
+                                stats.currentAllocCount,
+                                formatBytes(stats.currentAllocSize)));
+                    });
+                } catch (InterruptedException e) {
+                    break;
+                }
+            }
+        }).start();
+        
+        // 启动100个工作线程
+        for (int i = 0; i < THREAD_COUNT; i++) {
+            final int threadId = i;
+            stressTestThreads[i] = new Thread(() -> {
+                Log.d(TAG, "线程 " + threadId + " 启动");
+                java.util.Random random = new java.util.Random();
+                
+                while (isStressTestRunning) {
+                    try {
+                        // 每次分配 1-10 个小内存块
+                        int allocCount = 1 + random.nextInt(10);
+                        NativeHacker.allocMemory(allocCount);
+                        
+                        // 随机休息 10-50 毫秒
+                        int sleepTime = 10 + random.nextInt(40);
+                        Thread.sleep(sleepTime);
+                        
+                    } catch (InterruptedException e) {
+                        break;
+                    } catch (Exception e) {
+                        Log.e(TAG, "线程 " + threadId + " 异常", e);
+                        break;
+                    }
+                }
+                
+                Log.d(TAG, "线程 " + threadId + " 停止");
+            }, "StressTest-" + i);
+            
+            stressTestThreads[i].start();
+        }
+        
+        // 更新按钮文本
+        handler.post(() -> {
+            showToast("压力测试运行中...\n再次点击按钮停止");
+        });
+    }
+
+    /**
+     * 停止压力测试
+     */
+    private void stopStressTest() {
+        if (!isStressTestRunning) {
+            return;
+        }
+
+        Log.i(TAG, "停止压力测试");
+        isStressTestRunning = false;
+        
+        // 等待所有线程结束
+        if (stressTestThreads != null) {
+            for (Thread thread : stressTestThreads) {
+                if (thread != null && thread.isAlive()) {
+                    thread.interrupt();
+                }
+            }
+            
+            // 等待线程结束
+            new Thread(() -> {
+                try {
+                    for (Thread thread : stressTestThreads) {
+                        if (thread != null) {
+                            thread.join(1000); // 最多等待1秒
+                        }
+                    }
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                
+                handler.post(() -> {
+                    // 恢复按钮文本
+                    btnStressTest.setText("💥 压力测试 (100线程持续分配)");
+                    btnStressTest.setBackgroundTintList(
+                        android.content.res.ColorStateList.valueOf(0xFFFF5722) // 橙色
+                    );
+                    
+                    updateStats();
+                    SoHook.MemoryStats stats = SoHook.getMemoryStats();
+                    String result = String.format("✅ 压力测试已停止\n\n" +
+                            "最终统计：\n" +
+                            "总泄漏数: %,d 个\n" +
+                            "总泄漏大小: %s\n\n" +
+                            "请在 Web Dashboard 中查看详细数据",
+                            stats.currentAllocCount,
+                            formatBytes(stats.currentAllocSize));
+                    
+                    showToast("压力测试已停止");
+                    
+                    new androidx.appcompat.app.AlertDialog.Builder(this)
+                        .setTitle("压力测试已停止")
+                        .setMessage(result)
+                        .setPositiveButton("确定", null)
+                        .show();
+                    
+                    Log.i(TAG, result);
+                });
+            }).start();
+        }
     }
 
     /**
