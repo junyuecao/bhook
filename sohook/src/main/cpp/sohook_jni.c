@@ -280,6 +280,20 @@ static jstring sohook_jni_get_leaks_json(JNIEnv *env, jclass clazz) {
   return jjson;
 }
 
+// Native method: get leaks aggregated json
+static jstring sohook_jni_get_leaks_aggregated_json(JNIEnv *env, jclass clazz) {
+  (void)clazz;
+
+  char *json = memory_tracker_get_leaks_aggregated_json();
+  if (json == NULL) {
+    return (*env)->NewStringUTF(env, "[]");
+  }
+
+  jstring jjson = (*env)->NewStringUTF(env, json);
+  free(json);
+  return jjson;
+}
+
 // ============================================
 // 文件描述符监控相关JNI方法
 // ============================================
@@ -401,6 +415,7 @@ static JNINativeMethod sohook_jni_methods[] = {
     {"nativeSetBacktraceEnabled", "(Z)V", (void *)sohook_jni_set_backtrace_enabled},
     {"nativeIsBacktraceEnabled", "()Z", (void *)sohook_jni_is_backtrace_enabled},
     {"nativeGetLeaksJson", "()Ljava/lang/String;", (void *)sohook_jni_get_leaks_json},
+    {"nativeGetLeaksAggregatedJson", "()Ljava/lang/String;", (void *)sohook_jni_get_leaks_aggregated_json},
     // 文件描述符跟踪专用
     {"nativeGetFdLeakReport", "()Ljava/lang/String;", (void *)sohook_jni_get_fd_leak_report},
     {"nativeDumpFdLeakReport", "(Ljava/lang/String;)I", (void *)sohook_jni_dump_fd_leak_report},

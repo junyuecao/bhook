@@ -242,6 +242,7 @@ public class SoHook {
     private static native void nativeSetBacktraceEnabled(boolean enable);
     private static native boolean nativeIsBacktraceEnabled();
     static native String nativeGetLeaksJson();
+    static native String nativeGetLeaksAggregatedJson();
 
     // Native methods - 文件描述符专用
     private static native String nativeGetFdLeakReport();

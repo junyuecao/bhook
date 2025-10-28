@@ -31,6 +31,7 @@ add_library(sohook SHARED
     memory_hash_table.c
     memory_pool.c
     leak_report.c
+    leak_json.c
     memory_stats.c
     backtrace.c
     fd_tracker.c
