@@ -15,6 +15,7 @@ import org.junit.runners.Suite;
     SoHookAccuracyTest.class,
     SoHookCppTest.class,
     SoHookFdLeakTest.class,
+    SoHookLeakJsonTest.class,
 })
 public class SoHookTestSuite {
     // 测试套件类，用于一次运行所有测试

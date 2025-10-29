@@ -186,48 +186,57 @@ static bool aggregator_callback(memory_record_t *record, void *user_data) {
 static bool json_callback(memory_record_t *record, void *user_data) {
   json_context_t *ctx = (json_context_t *)user_data;
 
-  // 检查缓冲区空间（预留 1KB 用于单条记录）
-  if (ctx->buffer_used + 1024 > ctx->buffer_size) {
-    ctx->buffer_size *= 2;
-    char *new_buffer = (char *)original_malloc(ctx->buffer_size);
-    if (new_buffer == NULL) {
-      return false; // 停止遍历
-    }
-    memcpy(new_buffer, ctx->buffer, ctx->buffer_used);
-    original_free(ctx->buffer);
-    ctx->buffer = new_buffer;
-  }
+  // 宏:安全写入到 JSON 上下文缓冲区
+  #define CTX_SAFE_APPEND(fmt, ...) do { \
+    int written = snprintf(ctx->buffer + ctx->buffer_used, ctx->buffer_size - ctx->buffer_used, fmt, ##__VA_ARGS__); \
+    if (written < 0) { \
+      LOGE("snprintf failed in json_callback"); \
+      return false; \
+    } \
+    if (ctx->buffer_used + written >= ctx->buffer_size) { \
+      size_t new_size = ctx->buffer_size * 2; \
+      char *new_buffer = (char *)original_malloc(new_size); \
+      if (new_buffer == NULL) { \
+        LOGE("Failed to expand buffer from %zu to %zu", ctx->buffer_size, new_size); \
+        return false; \
+      } \
+      memcpy(new_buffer, ctx->buffer, ctx->buffer_used); \
+      original_free(ctx->buffer); \
+      ctx->buffer = new_buffer; \
+      ctx->buffer_size = new_size; \
+      written = snprintf(ctx->buffer + ctx->buffer_used, ctx->buffer_size - ctx->buffer_used, fmt, ##__VA_ARGS__); \
+      if (written < 0 || ctx->buffer_used + written >= ctx->buffer_size) { \
+        LOGE("snprintf failed after expansion"); \
+        return false; \
+      } \
+    } \
+    ctx->buffer_used += written; \
+  } while(0)
 
   // 添加逗号分隔符
   if (!ctx->first) {
-    ctx->buffer_used += snprintf(ctx->buffer + ctx->buffer_used,
-                                  ctx->buffer_size - ctx->buffer_used, ",");
+    CTX_SAFE_APPEND(",");
   }
   ctx->first = false;
 
   // 添加记录
-  ctx->buffer_used += snprintf(ctx->buffer + ctx->buffer_used,
-                                ctx->buffer_size - ctx->buffer_used,
-                                "{\"ptr\":\"%p\",\"size\":%zu,\"timestamp\":0,\"backtrace\":[",
-                                record->ptr, record->size);
+  CTX_SAFE_APPEND("{\"ptr\":\"%p\",\"size\":%zu,\"timestamp\":0,\"backtrace\":[",
+                  record->ptr, record->size);
 
   // 添加调用栈
   if (g_backtrace_enabled && record->backtrace_size > 0) {
     for (int j = 0; j < record->backtrace_size; j++) {
       if (j > 0) {
-        ctx->buffer_used += snprintf(ctx->buffer + ctx->buffer_used,
-                                      ctx->buffer_size - ctx->buffer_used, ",");
+        CTX_SAFE_APPEND(",");
       }
 
       // 先查找缓存
       const char *cached_symbol = symbol_cache_lookup(record->backtrace[j]);
       if (cached_symbol != NULL) {
-        // 缓存命中，直接使用
-        ctx->buffer_used += snprintf(ctx->buffer + ctx->buffer_used,
-                                      ctx->buffer_size - ctx->buffer_used,
-                                      "\"%s\"", cached_symbol);
+        // 缓存命中,直接使用
+        CTX_SAFE_APPEND("\"%s\"", cached_symbol);
       } else {
-        // 缓存未命中，调用 dladdr
+        // 缓存未命中,调用 dladdr
         Dl_info info;
         char symbol_buf[256];
 
@@ -236,30 +245,21 @@ static bool json_callback(memory_record_t *record, void *user_data) {
                    info.dli_sname,
                    (long)((char *)record->backtrace[j] - (char *)info.dli_saddr));
 
-          ctx->buffer_used += snprintf(ctx->buffer + ctx->buffer_used,
-                                        ctx->buffer_size - ctx->buffer_used,
-                                        "\"%s\"", symbol_buf);
-
-          // 添加到缓存
+          CTX_SAFE_APPEND("\"%s\"", symbol_buf);
           symbol_cache_add(record->backtrace[j], symbol_buf);
         } else {
           snprintf(symbol_buf, sizeof(symbol_buf), "%p", record->backtrace[j]);
-
-          ctx->buffer_used += snprintf(ctx->buffer + ctx->buffer_used,
-                                        ctx->buffer_size - ctx->buffer_used,
-                                        "\"%s\"", symbol_buf);
-
-          // 添加到缓存
+          CTX_SAFE_APPEND("\"%s\"", symbol_buf);
           symbol_cache_add(record->backtrace[j], symbol_buf);
         }
       }
     }
   }
 
-  ctx->buffer_used += snprintf(ctx->buffer + ctx->buffer_used,
-                                ctx->buffer_size - ctx->buffer_used, "]}");
+  CTX_SAFE_APPEND("]}");
   ctx->leak_count++;
 
+  #undef CTX_SAFE_APPEND
   return true; // 继续遍历
 }
 
@@ -279,7 +279,10 @@ char *leak_json_get_leaks(void) {
   }
 
   // 开始 JSON 数组
-  ctx.buffer_used += snprintf(ctx.buffer, ctx.buffer_size, "[");
+  int written = snprintf(ctx.buffer, ctx.buffer_size, "[");
+  if (written > 0) {
+    ctx.buffer_used += written;
+  }
 
   // 遍历哈希表获取所有泄漏记录（添加耗时统计）
   struct timespec start_time, end_time;
@@ -295,9 +298,17 @@ char *leak_json_get_leaks(void) {
     LOGI("hash_table_foreach took %ld ms, processed %d leaks", elapsed_ms, ctx.leak_count);
   }
 
-  // 结束 JSON 数组
-  ctx.buffer_used += snprintf(ctx.buffer + ctx.buffer_used,
-                               ctx.buffer_size - ctx.buffer_used, "]");
+  // 结束 JSON 数组 - 安全检查
+  if (ctx.buffer_used < ctx.buffer_size) {
+    written = snprintf(ctx.buffer + ctx.buffer_used,
+                       ctx.buffer_size - ctx.buffer_used, "]");
+    if (written > 0) {
+      ctx.buffer_used += written;
+    }
+  } else {
+    LOGE("Buffer overflow detected, buffer_used=%zu >= buffer_size=%zu", 
+         ctx.buffer_used, ctx.buffer_size);
+  }
 
   if (g_debug) {
     LOGD("Generated JSON with %d leaks, size=%zu", ctx.leak_count, ctx.buffer_used);
@@ -353,8 +364,8 @@ char *leak_json_get_leaks_aggregated(void) {
     }
   }
 
-  // 生成 JSON
-  size_t buffer_size = 1024 * 1024;  // 1MB 足够聚合后的数据
+  // 生成 JSON - 使用动态扩展的缓冲区
+  size_t buffer_size = 1024 * 1024;  // 初始 1MB
   char *buffer = (char *)original_malloc(buffer_size);
   if (buffer == NULL) {
     LOGE("Failed to allocate JSON buffer");
@@ -363,33 +374,65 @@ char *leak_json_get_leaks_aggregated(void) {
   }
 
   size_t buffer_used = 0;
-  buffer_used += snprintf(buffer, buffer_size, "[");
+  
+  // 宏:安全写入,自动检查并扩展缓冲区
+  #define SAFE_APPEND(fmt, ...) do { \
+    int written = snprintf(buffer + buffer_used, buffer_size - buffer_used, fmt, ##__VA_ARGS__); \
+    if (written < 0) { \
+      LOGE("snprintf failed"); \
+      original_free(buffer); \
+      original_free(groups); \
+      return NULL; \
+    } \
+    if (buffer_used + written >= buffer_size) { \
+      size_t new_size = buffer_size * 2; \
+      char *new_buffer = (char *)original_malloc(new_size); \
+      if (new_buffer == NULL) { \
+        LOGE("Failed to expand buffer from %zu to %zu", buffer_size, new_size); \
+        original_free(buffer); \
+        original_free(groups); \
+        return NULL; \
+      } \
+      memcpy(new_buffer, buffer, buffer_used); \
+      original_free(buffer); \
+      buffer = new_buffer; \
+      buffer_size = new_size; \
+      written = snprintf(buffer + buffer_used, buffer_size - buffer_used, fmt, ##__VA_ARGS__); \
+      if (written < 0 || buffer_used + written >= buffer_size) { \
+        LOGE("snprintf failed after expansion"); \
+        original_free(buffer); \
+        original_free(groups); \
+        return NULL; \
+      } \
+    } \
+    buffer_used += written; \
+  } while(0)
+
+  SAFE_APPEND("[");
 
   for (int i = 0; i < agg.group_count; i++) {
     stack_group_t *group = groups[i];
 
     if (i > 0) {
-      buffer_used += snprintf(buffer + buffer_used, buffer_size - buffer_used, ",");
+      SAFE_APPEND(",");
     }
 
-    buffer_used += snprintf(buffer + buffer_used, buffer_size - buffer_used,
-                            "{\"count\":%d,\"totalSize\":%zu,\"backtrace\":[",
-                            group->count, group->total_size);
+    SAFE_APPEND("{\"count\":%d,\"totalSize\":%zu,\"backtrace\":[",
+                group->count, group->total_size);
 
     // 添加调用栈
     if (g_backtrace_enabled && group->backtrace_size > 0) {
       for (int j = 0; j < group->backtrace_size; j++) {
         if (j > 0) {
-          buffer_used += snprintf(buffer + buffer_used, buffer_size - buffer_used, ",");
+          SAFE_APPEND(",");
         }
 
         // 查找缓存
         const char *cached_symbol = symbol_cache_lookup(group->backtrace[j]);
         if (cached_symbol != NULL) {
-          buffer_used += snprintf(buffer + buffer_used, buffer_size - buffer_used,
-                                  "\"%s\"", cached_symbol);
+          SAFE_APPEND("\"%s\"", cached_symbol);
         } else {
-          // 缓存未命中，调用 dladdr
+          // 缓存未命中,调用 dladdr
           Dl_info info;
           char symbol_buf[256];
 
@@ -398,26 +441,23 @@ char *leak_json_get_leaks_aggregated(void) {
                      info.dli_sname,
                      (long)((char *)group->backtrace[j] - (char *)info.dli_saddr));
 
-            buffer_used += snprintf(buffer + buffer_used, buffer_size - buffer_used,
-                                    "\"%s\"", symbol_buf);
-
+            SAFE_APPEND("\"%s\"", symbol_buf);
             symbol_cache_add(group->backtrace[j], symbol_buf);
           } else {
             snprintf(symbol_buf, sizeof(symbol_buf), "%p", group->backtrace[j]);
-
-            buffer_used += snprintf(buffer + buffer_used, buffer_size - buffer_used,
-                                    "\"%s\"", symbol_buf);
-
+            SAFE_APPEND("\"%s\"", symbol_buf);
             symbol_cache_add(group->backtrace[j], symbol_buf);
           }
         }
       }
     }
 
-    buffer_used += snprintf(buffer + buffer_used, buffer_size - buffer_used, "]}");
+    SAFE_APPEND("]}");
   }
 
-  buffer_used += snprintf(buffer + buffer_used, buffer_size - buffer_used, "]");
+  SAFE_APPEND("]");
+  
+  #undef SAFE_APPEND
 
   // 清理聚合器
   for (int i = 0; i < STACK_GROUP_HASH_SIZE; i++) {
