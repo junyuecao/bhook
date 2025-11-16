@@ -9,3 +9,5 @@ build/
 *.so
 wrap.sh
 local.properties
+.cursorrules
+.windsurf
